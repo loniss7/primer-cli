@@ -21,8 +21,8 @@ def cmd_align(args) -> int:
     if not in_path.exists():
         raise PrimerCliError(f"Input FASTA does not exist: {in_path}")
 
-    if out_path.exists():
-        raise PrimerCliError(f"Output file already exists: {out_path}")
+    if out_path.exists() and out_path.is_dir():
+        raise PrimerCliError(f"Output path is a directory, expected file: {out_path}")
 
     mafft_bin = args.mafft
     if shutil.which(mafft_bin) is None:

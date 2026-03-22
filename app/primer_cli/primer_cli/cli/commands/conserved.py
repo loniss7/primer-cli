@@ -16,8 +16,8 @@ def cmd_conserved(args) -> int:
     if not in_path.exists():
         raise PrimerCliError(f"Aligned FASTA does not exist: {in_path}")
 
-    if out_path.exists():
-        raise PrimerCliError(f"Output file already exists: {out_path}")
+    if out_path.exists() and out_path.is_dir():
+        raise PrimerCliError(f"Output path is a directory, expected file: {out_path}")
 
     if args.window <= 0:
         raise PrimerCliError("--window must be > 0")

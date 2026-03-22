@@ -75,9 +75,9 @@ def _ensure_writable_dir(path: Path, label: str) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _fail_if_exists(path: Path, label: str) -> None:
-    if path.exists():
-        raise PrimerCliError(f"{label} already exists: {path}")
+def _ensure_file_target(path: Path, label: str) -> None:
+    if path.exists() and path.is_dir():
+        raise PrimerCliError(f"{label} path is a directory, expected file: {path}")
 
 
 def _run_primers_stage(paths: PipelinePaths, args) -> None:
@@ -231,12 +231,12 @@ def cmd_pipeline(args) -> int:
         primers_report_name=args.primers_report_name,
     )
 
-    _fail_if_exists(paths.raw_fasta, "raw FASTA")
-    _fail_if_exists(paths.aligned_fasta, "aligned FASTA")
-    _fail_if_exists(paths.regions_json, "regions JSON")
-    _fail_if_exists(paths.primers_csv, "top primers CSV")
-    _fail_if_exists(paths.primers_json, "top primers JSON")
-    _fail_if_exists(paths.primers_report, "top primers report")
+    _ensure_file_target(paths.raw_fasta, "raw FASTA")
+    _ensure_file_target(paths.aligned_fasta, "aligned FASTA")
+    _ensure_file_target(paths.regions_json, "regions JSON")
+    _ensure_file_target(paths.primers_csv, "top primers CSV")
+    _ensure_file_target(paths.primers_json, "top primers JSON")
+    _ensure_file_target(paths.primers_report, "top primers report")
 
     # 1) FETCH
     rc = cmd_fetch(
@@ -299,9 +299,9 @@ def cmd_predict(args) -> int:
         primers_report_name=args.primers_report_name,
     )
 
-    _fail_if_exists(paths.primers_csv, "top primers CSV")
-    _fail_if_exists(paths.primers_json, "top primers JSON")
-    _fail_if_exists(paths.primers_report, "top primers report")
+    _ensure_file_target(paths.primers_csv, "top primers CSV")
+    _ensure_file_target(paths.primers_json, "top primers JSON")
+    _ensure_file_target(paths.primers_report, "top primers report")
 
     if args.top_n <= 0:
         raise PrimerCliError("--top-n must be > 0")

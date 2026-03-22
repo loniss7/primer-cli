@@ -1,0 +1,17 @@
+name: biopy
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+
+  # External bioinformatics tools used by the pipeline
+  - mafft
+  - blast
+  - seqkit
+
+  - pip:
+      # Single source of Python deps: app/primer_cli/pyproject.toml
+      - "-e ./app/primer_cli[dev,notebook]"

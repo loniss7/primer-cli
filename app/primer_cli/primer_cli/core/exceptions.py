@@ -1,0 +1,2 @@
+class PrimerCliError(Exception):
+    pass

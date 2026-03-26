@@ -8,6 +8,11 @@ from typing import Callable, Optional
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.logging import configure_logging
 from primer_cli import __version__
+from primer_cli.cli.pretty_screen import (
+    clean_pretty_flag,
+    has_pretty_flag,
+    run_pretty_screen,
+)
 
 
 Handler = Callable[[argparse.Namespace], int]
@@ -24,6 +29,11 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+    )
+    p.add_argument(
+        "--pretty-screen",
+        action="store_true",
+        help="Launch interactive pretty screen wrapper over standard CLI commands",
     )
 
 
@@ -139,6 +149,18 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--pair-cov-max-amplicon-gap-fraction", type=float, default=0.35)
 
 
+def _register_predict(sub: argparse._SubParsersAction) -> None:
+    from primer_cli.cli.commands.pipeline import cmd_predict
+
+    sp = sub.add_parser("predict", help="Build and rank primer pairs from prepared raw/alignment/regions")
+    sp.add_argument("--raw", required=True, help="Raw FASTA from NCBI (unaligned)")
+    sp.add_argument("--alignment", required=True, help="Aligned FASTA (MAFFT MSA)")
+    sp.add_argument("--regions", required=True, help="Conserved regions JSON (from conserved command)")
+    sp.add_argument("--out", required=True, help="Output directory for final reports")
+    _add_predict_args(sp)
+    sp.set_defaults(func=cmd_predict)
+    
+
 def _register_run(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.pipeline import cmd_pipeline
 
@@ -146,7 +168,11 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
         "run",
         help="Run end-to-end pipeline: fetch -> align -> conserved -> primer prediction",
     )
-    sp.add_argument("--gene_name", required=True, help="Name of gene")
+    sp.add_argument(
+        "--gene_name",
+        required=True,
+        help="Gene name or comma-separated list of gene names (e.g. 'vanA,vanB')",
+    )
     sp.add_argument("--workdir", required=True, help="Working directory for intermediate files")
     sp.add_argument("--out", required=True, help="Output directory for final reports")
     sp.add_argument("--max", type=int, default=100, help="Max sequences to fetch")
@@ -175,18 +201,6 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
     sp.set_defaults(func=cmd_pipeline)
 
 
-def _register_predict(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.pipeline import cmd_predict
-
-    sp = sub.add_parser("predict", help="Build and rank primer pairs from prepared raw/alignment/regions")
-    sp.add_argument("--raw", required=True, help="Raw FASTA from NCBI (unaligned)")
-    sp.add_argument("--alignment", required=True, help="Aligned FASTA (MAFFT MSA)")
-    sp.add_argument("--regions", required=True, help="Conserved regions JSON (from conserved command)")
-    sp.add_argument("--out", required=True, help="Output directory for final reports")
-    _add_predict_args(sp)
-    sp.set_defaults(func=cmd_predict)
-
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="primer-cli",
@@ -213,6 +227,25 @@ def _run_handler(handler: Handler, args: argparse.Namespace) -> int:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    if has_pretty_flag(raw_argv):
+        parser = build_parser()
+        pretty_parser = build_parser()
+        clean_argv = clean_pretty_flag(raw_argv)
+        default_log_level = "INFO"
+        if clean_argv:
+            try:
+                known_args, _ = parser.parse_known_args(clean_argv)
+                default_log_level = str(getattr(known_args, "log_level", "INFO"))
+            except Exception:
+                pass
+        configure_logging(default_log_level)
+        return run_pretty_screen(
+            pretty_parser,
+            _run_handler,
+            default_log_level=default_log_level,
+        )
+
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_logging(args.log_level)

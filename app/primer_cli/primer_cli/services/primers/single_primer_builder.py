@@ -70,7 +70,7 @@ def extract_primer_from_consensus(
     return primer
 
 
-def build_single_primers_strategy_a(
+def build_single_primers_from_windows(
     windows: Iterable[SinglePrimerWindowCandidate],
     consensus_sequence: str,
     *,

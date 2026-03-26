@@ -6,7 +6,7 @@ from typing import Iterable
 import primer3
 
 from primer_cli.core.exceptions import PrimerCliError
-from primer_cli.services.primers.strategy_a import CandidateSinglePrimer
+from primer_cli.services.primers.single_primer_builder import CandidateSinglePrimer
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,2 @@
+-e ./app/primer_cli
+rich>=13.7

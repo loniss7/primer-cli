@@ -12,7 +12,7 @@ from primer_cli.services.primers import (
     SinglePrimerWindowConfig,
     build_candidate_primer_pairs,
     build_consensus_and_msa_profile,
-    build_single_primers_strategy_a,
+    build_single_primers_from_windows,
     calculate_pair_coverage_on_msa,
     calculate_single_primer_metrics,
     calculate_single_primer_msa_coverage,
@@ -39,7 +39,7 @@ def test_pipeline_smoke_on_vana_dataset() -> None:
         conserved_regions=prep.conserved_regions,
         cfg=SinglePrimerWindowConfig(max_variable_positions=6),
     )
-    single = build_single_primers_strategy_a(windows=windows, consensus_sequence=consensus)
+    single = build_single_primers_from_windows(windows=windows, consensus_sequence=consensus)
     single_metrics = calculate_single_primer_metrics(
         single,
         cfg=SinglePrimerFilterConfig(

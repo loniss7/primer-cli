@@ -11,10 +11,6 @@ from primer_cli.services.aligners.mafft import MafftAligner
 
 
 def cmd_align(args) -> int:
-    """
-    Align FASTA sequences using MAFFT.
-    CLI orchestration only: validation + service invocation.
-    """
     in_path = Path(args.inp)
     out_path = Path(args.out)
 

@@ -7,7 +7,6 @@ from Bio.Align import MultipleSeqAlignment
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.services.primers.single_primer_metrics import SinglePrimerMetrics
-from primer_cli.services.primers.strategy_a import reverse_complement
 
 
 @dataclass(frozen=True)

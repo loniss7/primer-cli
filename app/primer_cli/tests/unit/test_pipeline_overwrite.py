@@ -71,3 +71,63 @@ def test_run_pipeline_overwrites_existing_output_files(
     assert (outdir / "top_primers.csv").read_text(encoding="utf-8") == "new-csv"
     assert (outdir / "top_primers.json").read_text(encoding="utf-8") == "new-json"
     assert (outdir / "top_primers.txt").read_text(encoding="utf-8") == "new-report"
+
+
+def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workdir = tmp_path / "workdir"
+    outdir = tmp_path / "results"
+    workdir.mkdir(parents=True)
+    outdir.mkdir(parents=True)
+
+    seen_genes: list[str] = []
+
+    def _fake_fetch(args) -> int:
+        seen_genes.append(args.gene)
+        Path(args.output).write_text(f"raw-{args.gene}", encoding="utf-8")
+        return 0
+
+    def _fake_align(args) -> int:
+        Path(args.out).write_text("aligned", encoding="utf-8")
+        return 0
+
+    def _fake_conserved(args) -> int:
+        Path(args.out).write_text("regions", encoding="utf-8")
+        return 0
+
+    def _fake_primers_stage(paths, args) -> None:
+        paths.primers_csv.write_text("csv", encoding="utf-8")
+        paths.primers_json.write_text("json", encoding="utf-8")
+        paths.primers_report.write_text("report", encoding="utf-8")
+
+    monkeypatch.setattr(pipeline, "cmd_fetch", _fake_fetch)
+    monkeypatch.setattr(pipeline, "cmd_align", _fake_align)
+    monkeypatch.setattr(pipeline, "cmd_conserved", _fake_conserved)
+    monkeypatch.setattr(pipeline, "_run_primers_stage", _fake_primers_stage)
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "run",
+            "--gene_name",
+            "vanA,vanB",
+            "--workdir",
+            str(workdir),
+            "--out",
+            str(outdir),
+        ]
+    )
+    rc = pipeline.cmd_pipeline(args)
+
+    assert rc == 0
+    assert seen_genes == ["vanA", "vanB"]
+
+    for gene in ("vanA", "vanB"):
+        assert (workdir / gene / "raw.fasta").read_text(encoding="utf-8") == f"raw-{gene}"
+        assert (workdir / gene / "aligned.fasta").read_text(encoding="utf-8") == "aligned"
+        assert (outdir / gene / "regions.json").read_text(encoding="utf-8") == "regions"
+        assert (outdir / gene / "top_primers.csv").read_text(encoding="utf-8") == "csv"
+        assert (outdir / gene / "top_primers.json").read_text(encoding="utf-8") == "json"
+        assert (outdir / gene / "top_primers.txt").read_text(encoding="utf-8") == "report"

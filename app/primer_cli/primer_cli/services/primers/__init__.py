@@ -5,9 +5,9 @@ from .window_candidates import (
     SinglePrimerWindowConfig,
     generate_single_primer_window_candidates,
 )
-from .strategy_a import (
+from .single_primer_builder import (
     CandidateSinglePrimer,
-    build_single_primers_strategy_a,
+    build_single_primers_from_windows,
     extract_primer_from_consensus,
     reverse_complement,
 )
@@ -66,7 +66,7 @@ __all__ = [
     "CandidateSinglePrimer",
     "reverse_complement",
     "extract_primer_from_consensus",
-    "build_single_primers_strategy_a",
+    "build_single_primers_from_windows",
     "SinglePrimerFilterConfig",
     "SinglePrimerMetrics",
     "calculate_single_primer_metrics",

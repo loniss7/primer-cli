@@ -1,4 +1,3 @@
-# src/primer_cli/services/ncbi/parsers.py
 from __future__ import annotations
 
 from io import StringIO

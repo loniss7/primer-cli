@@ -1,4 +1,3 @@
-# src/primer_cli/services/aligners/mafft.py
 from __future__ import annotations
 
 import re

@@ -1,4 +1,3 @@
-# src/primer_cli/cli/app.py
 from __future__ import annotations
 
 import argparse
@@ -41,7 +40,14 @@ def _register_fetch(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.fetch import cmd_fetch
 
     sp = sub.add_parser("fetch", help="Download sequences from NCBI into FASTA")
-    sp.add_argument("--gene", "--gene_name", dest="gene", required=True, help="Gene symbol")
+    sp.add_argument(
+        "--gene-name",
+        "--gene_name",
+        "--gene",
+        dest="gene_name",
+        required=True,
+        help="Gene symbol",
+    )
     sp.add_argument("--output", "--out", dest="output", required=True, help="Output FASTA path")
     sp.add_argument("--max", type=int, default=100, help="Max CDS sequences to fetch")
     sp.add_argument(
@@ -62,8 +68,15 @@ def _register_align(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.align import cmd_align
 
     sp = sub.add_parser("align", help="Align FASTA sequences using MAFFT")
-    sp.add_argument("--in", dest="inp", required=True, help="Input FASTA path")
-    sp.add_argument("--out", required=True, help="Output aligned FASTA path")
+    sp.add_argument(
+        "--input",
+        "--in",
+        "--inp",
+        dest="input_path",
+        required=True,
+        help="Input FASTA path",
+    )
+    sp.add_argument("--output", "--out", dest="output", required=True, help="Output aligned FASTA path")
     sp.add_argument("--mafft", default="mafft", help="Path to mafft binary (or in PATH)")
     sp.add_argument("--mafft-args", default="--auto", help="Extra MAFFT args, e.g. '--auto'")
     sp.set_defaults(func=cmd_align)
@@ -73,8 +86,8 @@ def _register_conserved(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.conserved import cmd_conserved
 
     sp = sub.add_parser("conserved", help="Find conserved regions in an alignment")
-    sp.add_argument("--inp", required=True, help="Aligned FASTA path")
-    sp.add_argument("--out", required=True, help="Output JSON path")
+    sp.add_argument("--input", "--inp", dest="input_path", required=True, help="Aligned FASTA path")
+    sp.add_argument("--output", "--out", dest="output", required=True, help="Output JSON path")
     sp.add_argument("--window", type=int, required=True)
     sp.add_argument("--quantile", type=float, required=True, help="Top quantile in (0, 1]")
     sp.add_argument("--min-identity", dest="quantile", type=float, help=argparse.SUPPRESS)
@@ -156,7 +169,7 @@ def _register_predict(sub: argparse._SubParsersAction) -> None:
     sp.add_argument("--raw", required=True, help="Raw FASTA from NCBI (unaligned)")
     sp.add_argument("--alignment", required=True, help="Aligned FASTA (MAFFT MSA)")
     sp.add_argument("--regions", required=True, help="Conserved regions JSON (from conserved command)")
-    sp.add_argument("--out", required=True, help="Output directory for final reports")
+    sp.add_argument("--output", "--out", dest="out", required=True, help="Output directory for final reports")
     _add_predict_args(sp)
     sp.set_defaults(func=cmd_predict)
     
@@ -169,12 +182,14 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
         help="Run end-to-end pipeline: fetch -> align -> conserved -> primer prediction",
     )
     sp.add_argument(
+        "--gene-name",
         "--gene_name",
+        dest="gene_name",
         required=True,
         help="Gene name or comma-separated list of gene names (e.g. 'vanA,vanB')",
     )
     sp.add_argument("--workdir", required=True, help="Working directory for intermediate files")
-    sp.add_argument("--out", required=True, help="Output directory for final reports")
+    sp.add_argument("--output", "--out", dest="out", required=True, help="Output directory for final reports")
     sp.add_argument("--max", type=int, default=100, help="Max sequences to fetch")
     sp.add_argument("--mafft", default="mafft", help="Path to mafft binary (or in PATH)")
     sp.add_argument("--mafft-args", default="--auto", help="Extra MAFFT args")

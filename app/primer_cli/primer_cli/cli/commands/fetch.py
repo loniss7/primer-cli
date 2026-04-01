@@ -1,4 +1,3 @@
-# src/primer_cli/cli/commands/fetch.py
 from __future__ import annotations
 
 import logging
@@ -14,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def cmd_fetch(args) -> int:
-    gene = getattr(args, "gene", None) or getattr(args, "gene_name", None)
+    gene = getattr(args, "gene_name", None) or getattr(args, "gene", None)
     if not gene:
-        raise PrimerCliError("--gene is required")
+        raise PrimerCliError("--gene-name is required")
 
     output = getattr(args, "output", None) or getattr(args, "out", None)
     if not output:

@@ -33,11 +33,11 @@ def test_run_pipeline_overwrites_existing_output_files(
         return 0
 
     def _fake_align(args) -> int:
-        Path(args.out).write_text("new-aligned", encoding="utf-8")
+        Path(args.output).write_text("new-aligned", encoding="utf-8")
         return 0
 
     def _fake_conserved(args) -> int:
-        Path(args.out).write_text("new-regions", encoding="utf-8")
+        Path(args.output).write_text("new-regions", encoding="utf-8")
         return 0
 
     def _fake_primers_stage(paths, args) -> None:
@@ -54,11 +54,11 @@ def test_run_pipeline_overwrites_existing_output_files(
     args = parser.parse_args(
         [
             "run",
-            "--gene_name",
+            "--gene-name",
             "vanA",
             "--workdir",
             str(workdir),
-            "--out",
+            "--output",
             str(outdir),
         ]
     )
@@ -85,16 +85,17 @@ def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
     seen_genes: list[str] = []
 
     def _fake_fetch(args) -> int:
-        seen_genes.append(args.gene)
-        Path(args.output).write_text(f"raw-{args.gene}", encoding="utf-8")
+        gene_name = args.gene_name
+        seen_genes.append(gene_name)
+        Path(args.output).write_text(f"raw-{gene_name}", encoding="utf-8")
         return 0
 
     def _fake_align(args) -> int:
-        Path(args.out).write_text("aligned", encoding="utf-8")
+        Path(args.output).write_text("aligned", encoding="utf-8")
         return 0
 
     def _fake_conserved(args) -> int:
-        Path(args.out).write_text("regions", encoding="utf-8")
+        Path(args.output).write_text("regions", encoding="utf-8")
         return 0
 
     def _fake_primers_stage(paths, args) -> None:
@@ -111,11 +112,11 @@ def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
     args = parser.parse_args(
         [
             "run",
-            "--gene_name",
+            "--gene-name",
             "vanA,vanB",
             "--workdir",
             str(workdir),
-            "--out",
+            "--output",
             str(outdir),
         ]
     )

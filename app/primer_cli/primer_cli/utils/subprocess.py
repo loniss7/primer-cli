@@ -1,4 +1,3 @@
-# src/primer_cli/utils/subprocess.py
 from __future__ import annotations
 
 import subprocess

@@ -1,3 +1,4 @@
+# src/primer_cli/io/alignment.py
 from __future__ import annotations
 
 from pathlib import Path

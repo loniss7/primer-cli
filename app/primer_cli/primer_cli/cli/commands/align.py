@@ -1,25 +1,18 @@
+# src/primer_cli/cli/commands/align.py
 from __future__ import annotations
 
-import logging
-import shutil
-import time
 from pathlib import Path
+import shutil
+import sys
+import time
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.services.aligners.mafft import MafftAligner
 
-logger = logging.getLogger(__name__)
-
 
 def cmd_align(args) -> int:
-    input_path = getattr(args, "input_path", None) or getattr(args, "inp", None)
-    output_path = getattr(args, "output", None) or getattr(args, "out", None)
-    if not input_path:
-        raise PrimerCliError("--input is required")
-    if not output_path:
-        raise PrimerCliError("--output is required")
-    in_path = Path(input_path)
-    out_path = Path(output_path)
+    in_path = Path(args.inp)
+    out_path = Path(args.out)
 
     if not in_path.exists():
         raise PrimerCliError(f"Input FASTA does not exist: {in_path}")
@@ -34,7 +27,11 @@ def cmd_align(args) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     aligner = MafftAligner(binary=mafft_bin)
-    logger.info("Starting alignment with MAFFT: %s -> %s", in_path, out_path)
+    print(
+        f"Starting alignment with MAFFT: {in_path} -> {out_path}",
+        file=sys.stderr,
+        flush=True,
+    )
     t0 = time.monotonic()
     aligner.align_fasta(
         input_path=str(in_path),
@@ -42,6 +39,6 @@ def cmd_align(args) -> int:
         extra_args=args.mafft_args,
     )
     dt = time.monotonic() - t0
-    logger.info("Alignment completed in %.1fs", dt)
+    print(f"Alignment completed in {dt:.1f}s", file=sys.stderr, flush=True)
 
     return 0

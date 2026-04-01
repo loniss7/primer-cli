@@ -1,3 +1,4 @@
+# src/primer_cli/core/config.py
 from __future__ import annotations
 
 from dataclasses import dataclass

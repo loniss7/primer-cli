@@ -53,7 +53,7 @@ def _ask_extra_args(console: Console) -> list[str]:
 def _build_fetch_argv(console: Console) -> list[str]:
     gene = _ask_required(console, "Gene")
     output = _ask_required(console, "Output FASTA path")
-    argv = ["fetch", "--gene-name", gene, "--output", output]
+    argv = ["fetch", "--gene", gene, "--output", output]
     max_records = _ask(console, "Max sequences", "100")
     if max_records:
         argv += ["--max", max_records]
@@ -75,7 +75,7 @@ def _build_align_argv(console: Console) -> list[str]:
     out = _ask_required(console, "Output aligned FASTA path")
     mafft = _ask(console, "MAFFT binary", "mafft")
     mafft_args = _ask(console, "MAFFT args", "--auto")
-    argv = ["align", "--input", inp, "--output", out]
+    argv = ["align", "--in", inp, "--out", out]
     if mafft:
         argv += ["--mafft", mafft]
     if mafft_args:
@@ -89,7 +89,7 @@ def _build_conserved_argv(console: Console) -> list[str]:
     out = _ask_required(console, "Output regions JSON path")
     window = _ask_required(console, "Window size")
     quantile = _ask_required(console, "Top quantile (0..1)")
-    argv = ["conserved", "--input", inp, "--output", out, "--window", window, "--quantile", quantile]
+    argv = ["conserved", "--inp", inp, "--out", out, "--window", window, "--quantile", quantile]
     argv += _ask_extra_args(console)
     return argv
 
@@ -98,7 +98,7 @@ def _build_run_argv(console: Console) -> list[str]:
     gene_name = _ask_required(console, "Gene or comma-separated genes")
     workdir = _ask_required(console, "Workdir path")
     out = _ask_required(console, "Output directory")
-    argv = ["run", "--gene-name", gene_name, "--workdir", workdir, "--output", out]
+    argv = ["run", "--gene_name", gene_name, "--workdir", workdir, "--out", out]
     max_records = _ask(console, "Max sequences", "100")
     if max_records:
         argv += ["--max", max_records]
@@ -143,7 +143,7 @@ def _build_predict_argv(console: Console) -> list[str]:
         alignment,
         "--regions",
         regions,
-        "--output",
+        "--out",
         out,
     ]
     top_n = _ask(console, "Top N output", "20")

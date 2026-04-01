@@ -1,3 +1,4 @@
+# src/primer_cli/cli/commands/pipeline.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,12 +46,12 @@ class PipelinePaths:
 
 def _parse_gene_names(raw_value: str) -> list[str]:
     if raw_value is None:
-        raise PrimerCliError("--gene-name is required")
+        raise PrimerCliError("--gene_name is required")
     parts = [part.strip() for part in raw_value.split(",")]
     if any(not part for part in parts):
-        raise PrimerCliError("--gene-name contains an empty gene; use comma-separated non-empty names")
+        raise PrimerCliError("--gene_name contains an empty gene; use comma-separated non-empty names")
     if not parts:
-        raise PrimerCliError("--gene-name is required")
+        raise PrimerCliError("--gene_name is required")
     return parts
 
 
@@ -124,7 +125,7 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
     # 1) FETCH
     rc = cmd_fetch(
         SimpleNamespace(
-            gene_name=gene_name,
+            gene=gene_name,
             output=str(paths.raw_fasta),
             max=args.max,
             query=args.query,
@@ -138,8 +139,8 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
     # 2) ALIGN
     rc = cmd_align(
         SimpleNamespace(
-            input_path=str(paths.raw_fasta),
-            output=str(paths.aligned_fasta),
+            inp=str(paths.raw_fasta),
+            out=str(paths.aligned_fasta),
             mafft=args.mafft,
             mafft_args=args.mafft_args,
         )
@@ -150,10 +151,10 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
     # 3) CONSERVED
     rc = cmd_conserved(
         SimpleNamespace(
-            input_path=str(paths.aligned_fasta),
+            inp=str(paths.aligned_fasta),
             window=args.window,
             quantile=args.quantile,
-            output=str(paths.regions_json),
+            out=str(paths.regions_json),
         )
     )
     if rc != 0:

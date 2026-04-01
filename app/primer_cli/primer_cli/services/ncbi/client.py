@@ -1,3 +1,4 @@
+# src/primer_cli/services/ncbi/client.py
 from __future__ import annotations
 
 import time

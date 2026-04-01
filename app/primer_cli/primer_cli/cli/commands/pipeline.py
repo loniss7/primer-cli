@@ -43,12 +43,6 @@ class PipelinePaths:
     primers_report: Path
 
 
-@dataclass(frozen=True)
-class OutputArtifact:
-    path: Path
-    action: str
-
-
 def _parse_gene_names(raw_value: str) -> list[str]:
     if raw_value is None:
         raise PrimerCliError("--gene-name is required")
@@ -103,64 +97,6 @@ def _ensure_file_target(path: Path, label: str) -> None:
         raise PrimerCliError(f"{label} path is a directory, expected file: {path}")
 
 
-def _prepare_output_artifact(path: Path, label: str) -> OutputArtifact:
-    _ensure_file_target(path, label)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existed_non_empty = path.exists() and path.stat().st_size > 0
-    if not path.exists():
-        path.touch()
-    return OutputArtifact(
-        path=path,
-        action="overwritten" if existed_non_empty else "created",
-    )
-
-
-def _build_output_artifacts(paths: PipelinePaths) -> list[OutputArtifact]:
-    return [
-        _prepare_output_artifact(paths.raw_fasta, "raw FASTA"),
-        _prepare_output_artifact(paths.aligned_fasta, "aligned FASTA"),
-        _prepare_output_artifact(paths.regions_json, "regions JSON"),
-        _prepare_output_artifact(paths.primers_csv, "top primers CSV"),
-        _prepare_output_artifact(paths.primers_json, "top primers JSON"),
-        _prepare_output_artifact(paths.primers_report, "top primers report"),
-    ]
-
-
-def _build_predict_output_artifacts(paths: PipelinePaths) -> list[OutputArtifact]:
-    return [
-        _prepare_output_artifact(paths.primers_csv, "top primers CSV"),
-        _prepare_output_artifact(paths.primers_json, "top primers JSON"),
-        _prepare_output_artifact(paths.primers_report, "top primers report"),
-    ]
-
-
-def _content_preview(path: Path, *, max_lines: int = 12, max_chars: int = 1200) -> str:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except Exception as e:
-        return f"<failed to read as utf-8 text: {e}>"
-
-    if not text.strip():
-        return "<empty file>"
-
-    lines = text.splitlines()
-    preview = "\n".join(lines[:max_lines])
-    if len(lines) > max_lines:
-        preview += "\n... (truncated)"
-    if len(preview) > max_chars:
-        preview = preview[:max_chars] + "\n... (truncated)"
-    return preview
-
-
-def _print_output_artifacts(artifacts: list[OutputArtifact], *, title: str) -> None:
-    print(f"\n{title}")
-    for item in artifacts:
-        print(f"- [{item.action}] {item.path}")
-        preview = _content_preview(item.path)
-        for line in preview.splitlines() or [""]:
-            print(f"    {line}")
-
-
 def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path) -> int:
     _ensure_writable_dir(workdir, "workdir")
     _ensure_writable_dir(outdir, "out")
@@ -177,7 +113,13 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
         primers_json_name=args.primers_json_name,
         primers_report_name=args.primers_report_name,
     )
-    artifacts = _build_output_artifacts(paths)
+
+    _ensure_file_target(paths.raw_fasta, "raw FASTA")
+    _ensure_file_target(paths.aligned_fasta, "aligned FASTA")
+    _ensure_file_target(paths.regions_json, "regions JSON")
+    _ensure_file_target(paths.primers_csv, "top primers CSV")
+    _ensure_file_target(paths.primers_json, "top primers JSON")
+    _ensure_file_target(paths.primers_report, "top primers report")
 
     # 1) FETCH
     rc = cmd_fetch(
@@ -219,7 +161,6 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
 
     # 4) PRIMERS
     _run_primers_stage(paths=paths, args=args)
-    _print_output_artifacts(artifacts, title=f"Pipeline outputs for gene {gene_name!r}")
     return 0
 
 
@@ -400,11 +341,12 @@ def cmd_predict(args) -> int:
         primers_report_name=args.primers_report_name,
     )
 
-    artifacts = _build_predict_output_artifacts(paths)
+    _ensure_file_target(paths.primers_csv, "top primers CSV")
+    _ensure_file_target(paths.primers_json, "top primers JSON")
+    _ensure_file_target(paths.primers_report, "top primers report")
 
     if args.top_n <= 0:
         raise PrimerCliError("--top-n must be > 0")
 
     _run_primers_stage(paths=paths, args=args)
-    _print_output_artifacts(artifacts, title="Predict outputs")
     return 0

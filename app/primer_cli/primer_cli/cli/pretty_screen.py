@@ -50,6 +50,15 @@ def _ask_extra_args(console: Console) -> list[str]:
         return []
 
 
+def _append_flag_value(argv: list[str], flag: str, value: str) -> None:
+    # If value starts with "-", argparse may parse it as another option.
+    # Use --flag=value form so values like "--auto" are handled correctly.
+    if value.startswith("-"):
+        argv.append(f"{flag}={value}")
+        return
+    argv += [flag, value]
+
+
 def _build_fetch_argv(console: Console) -> list[str]:
     gene = _ask_required(console, "Gene")
     output = _ask_required(console, "Output FASTA path")
@@ -79,7 +88,7 @@ def _build_align_argv(console: Console) -> list[str]:
     if mafft:
         argv += ["--mafft", mafft]
     if mafft_args:
-        argv += ["--mafft-args", mafft_args]
+        _append_flag_value(argv, "--mafft-args", mafft_args)
     argv += _ask_extra_args(console)
     return argv
 
@@ -107,7 +116,7 @@ def _build_run_argv(console: Console) -> list[str]:
         argv += ["--mafft", mafft]
     mafft_args = _ask(console, "MAFFT args", "--auto")
     if mafft_args:
-        argv += ["--mafft-args", mafft_args]
+        _append_flag_value(argv, "--mafft-args", mafft_args)
     query = _ask(console, "Custom query (optional)", "")
     if query:
         argv += ["--query", query]
@@ -163,8 +172,8 @@ _MENU: list[_MenuItem] = [
     _MenuItem("fetch", _build_fetch_argv),
     _MenuItem("align", _build_align_argv),
     _MenuItem("conserved", _build_conserved_argv),
-    _MenuItem("run", _build_run_argv),
     _MenuItem("predict", _build_predict_argv),
+    _MenuItem("run full pipeline (one or many genes)", _build_run_argv),
     _MenuItem("quit", None),
 ]
 
@@ -201,7 +210,8 @@ def _select_menu_item(console: Console) -> _MenuItem:
         console.print(
             Panel.fit(
                 "[bold cyan]Primer CLI Pretty Screen[/bold cyan]\n"
-                "Interactive wrapper over standard CLI commands",
+                "Interactive wrapper over standard CLI commands\n"
+                "[dim]Run command: use one gene or comma-separated genes[/dim]",
                 border_style="cyan",
             )
         )
@@ -255,7 +265,7 @@ def run_pretty_screen(
             argv = selected.argv_builder(console)
             log_level = Prompt.ask("Log level", default=default_log_level, console=console).upper()
             if log_level:
-                argv += ["--log-level", log_level]
+                argv = ["--log-level", log_level, *argv]
 
             console.print()
             console.print(

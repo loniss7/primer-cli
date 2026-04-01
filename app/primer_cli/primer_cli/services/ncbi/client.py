@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional
@@ -9,6 +10,8 @@ from requests.exceptions import RequestException
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.services.ncbi.parsers import parse_fasta_text
+
+logger = logging.getLogger(__name__)
 
 
 NCBI_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -148,6 +151,7 @@ class NCBIClient:
         history: ESearchHistory,
         retmax: int,
         retstart: int = 0,
+        rettype: str = "fasta_cds_na",
     ) -> str:
         if retmax <= 0:
             raise PrimerCliError("retmax must be > 0")
@@ -157,7 +161,7 @@ class NCBIClient:
         params = {
             "query_key": history.query_key,
             "WebEnv": history.webenv,
-            "rettype": "fasta_cds_na",
+            "rettype": rettype,
             "retmode": "text",
             "retmax": retmax,
             "retstart": retstart,
@@ -189,31 +193,64 @@ class NCBIClient:
     ):
         if max_results <= 0:
             raise PrimerCliError("max_results must be > 0")
-        total = min(max_results, max(history.count, 0))
-        if total == 0:
+        available = max(history.count, 0)
+        if available == 0:
             return []
+        target_records = min(max_results, available)
 
         if batch_size <= 0:
             raise PrimerCliError("batch_size must be > 0")
 
-        fetched = 0
-        records = []
+        scanned = 0
+        records: List = []
+        last_payload_sample = ""
         if on_progress is not None:
-            on_progress(fetched, total)
+            on_progress(scanned, available)
 
-        for start in range(0, total, batch_size):
-            current_batch = min(batch_size, total - start)
+        for start in range(0, available, batch_size):
+            if len(records) >= target_records:
+                break
+
+            current_batch = min(batch_size, available - start)
             fasta_text = self.fetch_fasta_by_history(
                 history=history,
                 retmax=current_batch,
                 retstart=start,
+                rettype="fasta_cds_na",
             )
-            records.extend(parse_fasta_text(fasta_text))
-            fetched += current_batch
+            batch_records = parse_fasta_text(fasta_text)
+
+            # NCBI may return empty/non-FASTA text for fasta_cds_na on some records.
+            # Fallback to plain FASTA for robustness.
+            if not batch_records:
+                fallback_text = self.fetch_fasta_by_history(
+                    history=history,
+                    retmax=current_batch,
+                    retstart=start,
+                    rettype="fasta",
+                )
+                batch_records = parse_fasta_text(fallback_text)
+                if batch_records:
+                    logger.info(
+                        "EFetch fallback succeeded for batch start=%s size=%s (rettype=fasta)",
+                        start,
+                        current_batch,
+                    )
+                else:
+                    sample = (fasta_text or fallback_text or "").strip().replace("\n", " ")[:240]
+                    last_payload_sample = sample
+
+            records.extend(batch_records)
+            scanned += current_batch
             if on_progress is not None:
-                on_progress(fetched, total)
+                on_progress(scanned, available)
 
         if not records:
-            raise PrimerCliError("NCBI returned FASTA, but no records were parsed")
+            if last_payload_sample:
+                raise PrimerCliError(
+                    "NCBI returned responses, but no FASTA records were parsed. "
+                    f"Sample: {last_payload_sample}"
+                )
+            raise PrimerCliError("NCBI returned empty payloads and no FASTA records were parsed")
 
-        return records
+        return records[:target_records]

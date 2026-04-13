@@ -7,17 +7,20 @@ from typing import Iterable, List
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 
-from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_file_exists, validation_error
 
 
 def read_fasta(path: Path) -> List[SeqRecord]:
-    if not path.exists():
-        raise PrimerCliError(f"FASTA file not found: {path}")
+    require_file_exists(path, where="read_fasta", arg_name="path")
 
     try:
         return list(SeqIO.parse(str(path), "fasta"))
     except Exception as e:
-        raise PrimerCliError(f"Failed to read FASTA: {path}") from e
+        raise validation_error(
+            what=f"failed to read FASTA file: {path}",
+            where="read_fasta",
+            fix="Ensure the file exists and is a valid FASTA file.",
+        ) from e
 
 
 def write_fasta(records: Iterable[SeqRecord], path: Path) -> None:
@@ -25,4 +28,8 @@ def write_fasta(records: Iterable[SeqRecord], path: Path) -> None:
     try:
         SeqIO.write(list(records), str(path), "fasta")
     except Exception as e:
-        raise PrimerCliError(f"Failed to write FASTA: {path}") from e
+        raise validation_error(
+            what=f"failed to write FASTA file: {path}",
+            where="write_fasta",
+            fix="Check write permissions and parent directory availability.",
+        ) from e

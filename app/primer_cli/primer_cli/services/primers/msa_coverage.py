@@ -6,6 +6,13 @@ from typing import Iterable
 from Bio.Align import MultipleSeqAlignment
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import (
+    require_choice,
+    require_non_negative_float,
+    require_non_negative_int,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.services.primers.single_primer_metrics import SinglePrimerMetrics
 
 
@@ -76,16 +83,41 @@ def _is_3prime_position(idx: int, length: int, cfg: SinglePrimerCoverageConfig) 
 
 
 def _validate_cfg(cfg: SinglePrimerCoverageConfig) -> None:
-    if cfg.gap_mode not in {"ignore", "penalize", "hard_fail"}:
-        raise PrimerCliError("gap_mode must be one of: ignore, penalize, hard_fail")
-    if cfg.strong_3p_nt <= 0:
-        raise PrimerCliError("strong_3p_nt must be > 0")
+    require_choice(
+        cfg.gap_mode,
+        where="SinglePrimerCoverageConfig.gap_mode",
+        arg_name="gap_mode",
+        choices={"ignore", "penalize", "hard_fail"},
+    )
+    require_positive_int(
+        cfg.strong_3p_nt,
+        where="SinglePrimerCoverageConfig.strong_3p_nt",
+        arg_name="strong_3p_nt",
+    )
     if cfg.moderate_3p_nt < cfg.strong_3p_nt:
-        raise PrimerCliError("moderate_3p_nt must be >= strong_3p_nt")
-    if cfg.max_total_mismatches < 0 or cfg.max_3prime_mismatches < 0:
-        raise PrimerCliError("max mismatch thresholds must be >= 0")
-    if cfg.max_weighted_mismatch_score < 0:
-        raise PrimerCliError("max_weighted_mismatch_score must be >= 0")
+        raise validation_error(
+            what=(
+                f"moderate_3p_nt must be >= strong_3p_nt "
+                f"(got moderate_3p_nt={cfg.moderate_3p_nt}, strong_3p_nt={cfg.strong_3p_nt})"
+            ),
+            where="SinglePrimerCoverageConfig",
+            fix="Set moderate_3p_nt to a value greater than or equal to strong_3p_nt.",
+        )
+    require_non_negative_int(
+        cfg.max_total_mismatches,
+        where="SinglePrimerCoverageConfig.max_total_mismatches",
+        arg_name="max_total_mismatches",
+    )
+    require_non_negative_int(
+        cfg.max_3prime_mismatches,
+        where="SinglePrimerCoverageConfig.max_3prime_mismatches",
+        arg_name="max_3prime_mismatches",
+    )
+    require_non_negative_float(
+        cfg.max_weighted_mismatch_score,
+        where="SinglePrimerCoverageConfig.max_weighted_mismatch_score",
+        arg_name="max_weighted_mismatch_score",
+    )
 
 
 def _target_from_alignment_window(window: str, orientation: str) -> str:

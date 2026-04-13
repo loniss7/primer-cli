@@ -10,6 +10,7 @@ from Bio.SeqRecord import SeqRecord
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.models import Region
+from primer_cli.core.validation import require_file_exists, validation_error
 
 
 @dataclass(frozen=True)
@@ -22,51 +23,76 @@ class PreparedPrimerInputs:
 
 
 def _load_raw_fasta(path: Path) -> list[SeqRecord]:
-    if not path.exists():
-        raise PrimerCliError(f"Raw FASTA does not exist: {path}")
+    require_file_exists(path, where="_load_raw_fasta", arg_name="raw_fasta_path")
 
     try:
         records = list(SeqIO.parse(str(path), "fasta"))
     except Exception as e:
-        raise PrimerCliError(f"Failed to read raw FASTA: {path}") from e
+        raise validation_error(
+            what=f"failed to read raw FASTA: {path}",
+            where="_load_raw_fasta",
+            fix="Provide a valid FASTA file at raw_fasta_path.",
+        ) from e
 
     if not records:
-        raise PrimerCliError(f"Raw FASTA is empty: {path}")
+        raise validation_error(
+            what=f"raw FASTA contains no records: {path}",
+            where="_load_raw_fasta",
+            fix="Provide a non-empty FASTA file with at least one sequence.",
+        )
 
     return records
 
 
 def _load_alignment(path: Path) -> MultipleSeqAlignment:
-    if not path.exists():
-        raise PrimerCliError(f"Aligned FASTA does not exist: {path}")
+    require_file_exists(path, where="_load_alignment", arg_name="alignment_fasta_path")
 
     try:
         alignment = AlignIO.read(str(path), "fasta")
     except Exception as e:
-        raise PrimerCliError(f"Failed to read alignment FASTA: {path}") from e
+        raise validation_error(
+            what=f"failed to read alignment FASTA: {path}",
+            where="_load_alignment",
+            fix="Provide a valid aligned FASTA file at alignment_fasta_path.",
+        ) from e
 
     if len(alignment) == 0:
-        raise PrimerCliError(f"Alignment is empty: {path}")
+        raise validation_error(
+            what=f"alignment is empty: {path}",
+            where="_load_alignment",
+            fix="Provide an alignment FASTA with at least one sequence.",
+        )
 
     return alignment
 
 
 def _load_conserved_regions(path: Path) -> list[Region]:
-    if not path.exists():
-        raise PrimerCliError(f"Conserved regions file does not exist: {path}")
+    require_file_exists(path, where="_load_conserved_regions", arg_name="conserved_regions_path")
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
-        raise PrimerCliError(f"Failed to read conserved regions JSON: {path}") from e
+        raise validation_error(
+            what=f"failed to parse conserved regions JSON: {path}",
+            where="_load_conserved_regions",
+            fix="Provide a valid JSON array of conserved regions.",
+        ) from e
 
     if not isinstance(raw, list):
-        raise PrimerCliError("Conserved regions JSON must contain a list")
+        raise validation_error(
+            what="conserved regions payload is not a JSON list",
+            where="_load_conserved_regions",
+            fix="Store conserved regions as a JSON array of objects.",
+        )
 
     regions: list[Region] = []
     for idx, item in enumerate(raw):
         if not isinstance(item, dict):
-            raise PrimerCliError(f"Conserved region at index {idx} is not an object")
+            raise validation_error(
+                what=f"conserved region at index {idx} is not an object",
+                where="_load_conserved_regions",
+                fix="Ensure each list item is an object with start_col, end_col, mean_score.",
+            )
         try:
             region = Region(
                 start_col=int(item["start_col"]),
@@ -74,11 +100,19 @@ def _load_conserved_regions(path: Path) -> list[Region]:
                 mean_score=float(item["mean_score"]),
             )
         except Exception as e:
-            raise PrimerCliError(f"Invalid conserved region at index {idx}: {item}") from e
+            raise validation_error(
+                what=f"invalid conserved region at index {idx}: {item}",
+                where="_load_conserved_regions",
+                fix="Each region must include numeric start_col, end_col and mean_score.",
+            ) from e
         regions.append(region)
 
     if not regions:
-        raise PrimerCliError(f"No conserved regions found in: {path}")
+        raise validation_error(
+            what=f"no conserved regions found in file: {path}",
+            where="_load_conserved_regions",
+            fix="Provide a non-empty conserved regions JSON list.",
+        )
 
     return regions
 

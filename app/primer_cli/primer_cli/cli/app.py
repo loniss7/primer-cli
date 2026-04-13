@@ -40,21 +40,27 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
 def _register_fetch(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.fetch import cmd_fetch
 
-    sp = sub.add_parser("fetch", help="Download sequences from NCBI into FASTA")
-    sp.add_argument("--gene", "--gene_name", dest="gene", required=True, help="Gene symbol")
-    sp.add_argument("--output", "--out", dest="output", required=True, help="Output FASTA path")
-    sp.add_argument("--max", type=int, default=100, help="Max CDS sequences to fetch")
+    sp = sub.add_parser("fetch", help="Download CDS sequences from NCBI")
+    sp.add_argument("--gene", required=True, help="Gene symbol to query in NCBI")
+    sp.add_argument("--output", required=True, help="Path to output FASTA file")
+    sp.add_argument(
+        "--max-sequences",
+        dest="max",
+        type=int,
+        default=100,
+        help="Maximum number of CDS sequences to fetch",
+    )
     sp.add_argument(
         "--query",
         default=None,
-        help="Custom ESearch query. By default: '<gene>[Gene] AND bacteria[Organism]'",
+        help="Custom NCBI ESearch query (default: '<gene>[Gene] AND bacteria[Organism]')",
     )
     sp.add_argument(
         "--email",
         default=None,
-        help="Email for NCBI E-utilities (or set NCBI_EMAIL env var)",
+        help="Email for NCBI E-utilities (or set NCBI_EMAIL environment variable)",
     )
-    sp.add_argument("--batch-size", type=int, default=20, help="EFetch batch size")
+    sp.add_argument("--batch-size", type=int, default=20, help="Number of records per EFetch batch")
     sp.set_defaults(func=cmd_fetch)
 
 
@@ -62,10 +68,10 @@ def _register_align(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.align import cmd_align
 
     sp = sub.add_parser("align", help="Align FASTA sequences using MAFFT")
-    sp.add_argument("--in", dest="inp", required=True, help="Input FASTA path")
-    sp.add_argument("--out", required=True, help="Output aligned FASTA path")
-    sp.add_argument("--mafft", default="mafft", help="Path to mafft binary (or in PATH)")
-    sp.add_argument("--mafft-args", default="--auto", help="Extra MAFFT args, e.g. '--auto'")
+    sp.add_argument("--input", dest="inp", required=True, help="Path to input FASTA file")
+    sp.add_argument("--output", dest="out", required=True, help="Path to output aligned FASTA file")
+    sp.add_argument("--mafft", default="mafft", help="MAFFT executable name or path")
+    sp.add_argument("--mafft-args", default="--auto", help="Additional MAFFT arguments")
     sp.set_defaults(func=cmd_align)
 
 
@@ -73,11 +79,16 @@ def _register_conserved(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.conserved import cmd_conserved
 
     sp = sub.add_parser("conserved", help="Find conserved regions in an alignment")
-    sp.add_argument("--inp", required=True, help="Aligned FASTA path")
-    sp.add_argument("--out", required=True, help="Output JSON path")
-    sp.add_argument("--window", type=int, required=True)
-    sp.add_argument("--quantile", type=float, required=True, help="Top quantile in (0, 1]")
-    sp.add_argument("--min-identity", dest="quantile", type=float, help=argparse.SUPPRESS)
+    sp.add_argument("--input", dest="inp", required=True, help="Path to input aligned FASTA file")
+    sp.add_argument("--output", dest="out", required=True, help="Path to output conserved-regions JSON file")
+    sp.add_argument("--window-size", dest="window", type=int, required=True, help="Sliding window size in MSA columns")
+    sp.add_argument(
+        "--top-quantile",
+        dest="quantile",
+        type=float,
+        required=True,
+        help="Top quantile threshold in range (0, 1]",
+    )
     sp.set_defaults(func=cmd_conserved)
 
 
@@ -152,11 +163,16 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
 def _register_predict(sub: argparse._SubParsersAction) -> None:
     from primer_cli.cli.commands.pipeline import cmd_predict
 
-    sp = sub.add_parser("predict", help="Build and rank primer pairs from prepared raw/alignment/regions")
-    sp.add_argument("--raw", required=True, help="Raw FASTA from NCBI (unaligned)")
-    sp.add_argument("--alignment", required=True, help="Aligned FASTA (MAFFT MSA)")
-    sp.add_argument("--regions", required=True, help="Conserved regions JSON (from conserved command)")
-    sp.add_argument("--out", required=True, help="Output directory for final reports")
+    sp = sub.add_parser("predict", help="Build and rank primer pairs from prepared inputs")
+    sp.add_argument("--raw-fasta", dest="raw", required=True, help="Path to raw (unaligned) FASTA file")
+    sp.add_argument("--aligned-fasta", dest="alignment", required=True, help="Path to aligned FASTA file (MSA)")
+    sp.add_argument(
+        "--conserved-regions",
+        dest="regions",
+        required=True,
+        help="Path to conserved-regions JSON file",
+    )
+    sp.add_argument("--output-dir", dest="out", required=True, help="Path to output directory for final reports")
     _add_predict_args(sp)
     sp.set_defaults(func=cmd_predict)
     
@@ -168,34 +184,36 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
         "run",
         help="Run end-to-end pipeline: fetch -> align -> conserved -> primer prediction",
     )
+    sp.add_argument("--genes", dest="gene_name", required=True, help="Gene name or comma-separated gene names")
+    sp.add_argument("--work-dir", dest="workdir", required=True, help="Path to working directory for intermediate files")
+    sp.add_argument("--output-dir", dest="out", required=True, help="Path to output directory for final reports")
     sp.add_argument(
-        "--gene_name",
-        required=True,
-        help="Gene name or comma-separated list of gene names (e.g. 'vanA,vanB')",
+        "--max-sequences",
+        dest="max",
+        type=int,
+        default=100,
+        help="Maximum number of CDS sequences to fetch per gene",
     )
-    sp.add_argument("--workdir", required=True, help="Working directory for intermediate files")
-    sp.add_argument("--out", required=True, help="Output directory for final reports")
-    sp.add_argument("--max", type=int, default=100, help="Max sequences to fetch")
-    sp.add_argument("--mafft", default="mafft", help="Path to mafft binary (or in PATH)")
-    sp.add_argument("--mafft-args", default="--auto", help="Extra MAFFT args")
+    sp.add_argument("--mafft", default="mafft", help="MAFFT executable name or path")
+    sp.add_argument("--mafft-args", default="--auto", help="Additional MAFFT arguments")
     sp.add_argument(
         "--query",
         default=None,
-        help="Custom ESearch query. By default: '<gene>[Gene] AND bacteria[Organism]'",
+        help="Custom NCBI ESearch query (default: '<gene>[Gene] AND bacteria[Organism]')",
     )
     sp.add_argument(
         "--email",
         default=None,
-        help="Email for NCBI E-utilities (or set NCBI_EMAIL env var)",
+        help="Email for NCBI E-utilities (or set NCBI_EMAIL environment variable)",
     )
-    sp.add_argument("--batch-size", type=int, default=20, help="EFetch batch size")
-    sp.add_argument("--window", type=int, default=25, help="Sliding window size (columns)")
+    sp.add_argument("--batch-size", type=int, default=20, help="Number of records per EFetch batch")
+    sp.add_argument("--window-size", dest="window", type=int, default=25, help="Sliding window size in MSA columns")
     sp.add_argument(
-        "--quantile",
+        "--top-quantile",
         dest="quantile",
         type=float,
         default=0.8,
-        help="Top quantile for conserved windows (0..1)",
+        help="Top quantile threshold for conserved windows in range (0, 1]",
     )
     _add_predict_args(sp)
     sp.set_defaults(func=cmd_pipeline)

@@ -54,11 +54,11 @@ def test_run_pipeline_overwrites_existing_output_files(
     args = parser.parse_args(
         [
             "run",
-            "--gene_name",
+            "--genes",
             "vanA",
-            "--workdir",
+            "--work-dir",
             str(workdir),
-            "--out",
+            "--output-dir",
             str(outdir),
         ]
     )
@@ -111,11 +111,11 @@ def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
     args = parser.parse_args(
         [
             "run",
-            "--gene_name",
+            "--genes",
             "vanA,vanB",
-            "--workdir",
+            "--work-dir",
             str(workdir),
-            "--out",
+            "--output-dir",
             str(outdir),
         ]
     )

@@ -9,6 +9,11 @@ import requests
 from requests.exceptions import RequestException
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import (
+    require_non_negative_int,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.services.ncbi.parsers import parse_fasta_text
 
 
@@ -83,8 +88,7 @@ class NCBIClient:
         return query
 
     def search_history(self, query: str, max_results: int) -> ESearchHistory:
-        if max_results <= 0:
-            raise PrimerCliError("max_results must be > 0")
+        require_positive_int(max_results, where="NCBIClient.search_history", arg_name="max_results")
 
         params = {
             "term": query,
@@ -101,16 +105,23 @@ class NCBIClient:
             query_key = result["querykey"]
             count = int(result.get("count", "0"))
         except Exception as e:
-            raise PrimerCliError("Unexpected NCBI esearch response format") from e
+            raise validation_error(
+                what="unexpected NCBI esearch response format",
+                where="NCBIClient.search_history",
+                fix="Retry request or inspect query and NCBI response payload.",
+            ) from e
 
         if not webenv or not query_key:
-            raise PrimerCliError("NCBI esearch did not return WebEnv/QueryKey")
+            raise validation_error(
+                what="NCBI esearch did not return WebEnv/QueryKey",
+                where="NCBIClient.search_history",
+                fix="Retry request; if it persists, use a different query or check NCBI status.",
+            )
 
         return ESearchHistory(webenv=webenv, query_key=query_key, count=count)
 
     def search_uids(self, query: str, max_results: int) -> List[str]:
-        if max_results <= 0:
-            raise PrimerCliError("max_results must be > 0")
+        require_positive_int(max_results, where="NCBIClient.search_uids", arg_name="max_results")
 
         params = {
             "term": query,
@@ -123,7 +134,11 @@ class NCBIClient:
         try:
             uids = data["esearchresult"]["idlist"]
         except Exception as e:
-            raise PrimerCliError("Unexpected NCBI esearch response format") from e
+            raise validation_error(
+                what="unexpected NCBI esearch response format",
+                where="NCBIClient.search_uids",
+                fix="Retry request or inspect query and NCBI response payload.",
+            ) from e
 
         if not uids:
             return []
@@ -150,10 +165,12 @@ class NCBIClient:
         retmax: int,
         retstart: int = 0,
     ) -> str:
-        if retmax <= 0:
-            raise PrimerCliError("retmax must be > 0")
-        if retstart < 0:
-            raise PrimerCliError("retstart must be >= 0")
+        require_positive_int(retmax, where="NCBIClient.fetch_fasta_by_history", arg_name="retmax")
+        require_non_negative_int(
+            retstart,
+            where="NCBIClient.fetch_fasta_by_history",
+            arg_name="retstart",
+        )
 
         params = {
             "query_key": history.query_key,
@@ -188,14 +205,12 @@ class NCBIClient:
         batch_size: int = 20,
         on_progress: Optional[Callable[[int, int], None]] = None,
     ):
-        if max_results <= 0:
-            raise PrimerCliError("max_results must be > 0")
+        require_positive_int(max_results, where="NCBIClient.fetch_by_history", arg_name="max_results")
         total = min(max_results, max(history.count, 0))
         if total == 0:
             return []
 
-        if batch_size <= 0:
-            raise PrimerCliError("batch_size must be > 0")
+        require_positive_int(batch_size, where="NCBIClient.fetch_by_history", arg_name="batch_size")
 
         fetched = 0
         records = []
@@ -215,6 +230,10 @@ class NCBIClient:
                 on_progress(fetched, total)
 
         if not records:
-            raise PrimerCliError("NCBI returned FASTA, but no records were parsed")
+            raise validation_error(
+                what="NCBI returned FASTA payload but no records were parsed",
+                where="NCBIClient.fetch_by_history",
+                fix="Retry request or lower batch size; if issue persists, inspect FASTA payload.",
+            )
 
         return records

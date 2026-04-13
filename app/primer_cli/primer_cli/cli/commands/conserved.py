@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import (
+    require_file_exists,
+    require_fraction_open01,
+    require_not_directory,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.services.conserved.finder import ConservedRegionFinder
 from primer_cli.io.alignment import get_tabular_from_msa
 from primer_cli.io.reports import write_regions_json
@@ -13,19 +19,16 @@ def cmd_conserved(args) -> int:
     in_path = Path(args.inp)
     out_path = Path(args.out)
 
-    if not in_path.exists():
-        raise PrimerCliError(f"Aligned FASTA does not exist: {in_path}")
-
-    if out_path.exists() and out_path.is_dir():
-        raise PrimerCliError(f"Output path is a directory, expected file: {out_path}")
-
-    if args.window <= 0:
-        raise PrimerCliError("--window must be > 0")
+    require_file_exists(in_path, where="conserved --input", arg_name="--input")
+    require_not_directory(out_path, where="conserved --output", arg_name="--output")
+    require_positive_int(int(args.window), where="conserved --window-size", arg_name="--window-size")
 
     quantile = args.quantile
-
-    if not (0 < quantile <= 1):
-        raise PrimerCliError("--quantile must be in (0, 1]")
+    require_fraction_open01(
+        float(quantile),
+        where="conserved --top-quantile",
+        arg_name="--top-quantile",
+    )
     
     metric = "inverse_shannon_uncertainty"
     gap_mode = "ignore"
@@ -44,10 +47,18 @@ def cmd_conserved(args) -> int:
     try:
         regions = finder.find(msa)
     except ValueError as e:
-        raise PrimerCliError(str(e))
+        raise validation_error(
+            what=str(e),
+            where="conserved",
+            fix="Check alignment length and conserved-region settings (window size and quantile).",
+        )
 
     if not regions:
-        raise PrimerCliError("No conserved regions found with the given parameters")
+        raise validation_error(
+            what="no conserved regions found for the provided inputs",
+            where="conserved",
+            fix="Relax --top-quantile or reduce --window-size.",
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     write_regions_json(regions, out_path)

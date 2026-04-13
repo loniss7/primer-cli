@@ -6,6 +6,13 @@ from typing import Iterable
 from Bio.Align import MultipleSeqAlignment
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import (
+    require_choice,
+    require_fraction_closed01,
+    require_non_negative_int,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.services.primers.pair_candidates import CandidatePrimerPair
 
 
@@ -56,16 +63,37 @@ def _revcomp_with_gaps(seq: str) -> str:
 
 
 def _validate_cfg(cfg: PairCoverageConfig) -> None:
-    if cfg.max_total_mismatches < 0 or cfg.max_3prime_mismatches < 0:
-        raise PrimerCliError("max mismatch thresholds must be >= 0")
-    if cfg.strong_3p_nt <= 0:
-        raise PrimerCliError("strong_3p_nt must be > 0")
-    if cfg.gap_mode not in {"ignore", "penalize", "hard_fail"}:
-        raise PrimerCliError("gap_mode must be one of: ignore, penalize, hard_fail")
-    if cfg.max_gap_positions_per_primer < 0:
-        raise PrimerCliError("max_gap_positions_per_primer must be >= 0")
-    if not (0.0 <= cfg.max_amplicon_gap_fraction <= 1.0):
-        raise PrimerCliError("max_amplicon_gap_fraction must be in [0, 1]")
+    require_non_negative_int(
+        cfg.max_total_mismatches,
+        where="PairCoverageConfig.max_total_mismatches",
+        arg_name="max_total_mismatches",
+    )
+    require_non_negative_int(
+        cfg.max_3prime_mismatches,
+        where="PairCoverageConfig.max_3prime_mismatches",
+        arg_name="max_3prime_mismatches",
+    )
+    require_positive_int(
+        cfg.strong_3p_nt,
+        where="PairCoverageConfig.strong_3p_nt",
+        arg_name="strong_3p_nt",
+    )
+    require_choice(
+        cfg.gap_mode,
+        where="PairCoverageConfig.gap_mode",
+        arg_name="gap_mode",
+        choices={"ignore", "penalize", "hard_fail"},
+    )
+    require_non_negative_int(
+        cfg.max_gap_positions_per_primer,
+        where="PairCoverageConfig.max_gap_positions_per_primer",
+        arg_name="max_gap_positions_per_primer",
+    )
+    require_fraction_closed01(
+        cfg.max_amplicon_gap_fraction,
+        where="PairCoverageConfig.max_amplicon_gap_fraction",
+        arg_name="max_amplicon_gap_fraction",
+    )
 
 
 def _is_3prime_pos(idx: int, length: int, strong_3p_nt: int) -> bool:
@@ -78,7 +106,11 @@ def _target_from_alignment_window(window: str, orientation: str) -> str:
         return window.upper()
     if orientation == "reverse":
         return _revcomp_with_gaps(window)
-    raise PrimerCliError(f"Unsupported orientation: {orientation}")
+    raise validation_error(
+        what=f"unsupported orientation '{orientation}'",
+        where="_target_from_alignment_window",
+        fix="Use 'forward' or 'reverse'.",
+    )
 
 
 def _match_primer_on_sequence(

@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.models import Region
+from primer_cli.core.validation import (
+    require_fraction_closed01,
+    require_non_negative_int,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.services.primers.msa_profile import MSAColumnMetrics
 
 
@@ -57,25 +63,60 @@ def _validate_inputs(
     if not conserved_regions:
         raise PrimerCliError("conserved_regions is empty")
     if len(consensus_sequence) != len(profile):
-        raise PrimerCliError(
-            "consensus/profile length mismatch: "
-            f"consensus={len(consensus_sequence)}, profile={len(profile)}"
+        raise validation_error(
+            what=(
+                "consensus/profile length mismatch: "
+                f"consensus={len(consensus_sequence)}, profile={len(profile)}"
+            ),
+            where="generate_single_primer_window_candidates",
+            fix="Provide profile built from the same alignment as consensus_sequence.",
         )
 
-    if cfg.min_len <= 0 or cfg.max_len <= 0 or cfg.min_len > cfg.max_len:
-        raise PrimerCliError("Invalid window length bounds")
-    if cfg.tail_len <= 0:
-        raise PrimerCliError("tail_len must be > 0")
-    if not (0.0 <= cfg.variability_threshold <= 1.0):
-        raise PrimerCliError("variability_threshold must be in [0, 1]")
-    if not (0.0 <= cfg.gap_fraction_threshold <= 1.0):
-        raise PrimerCliError("gap_fraction_threshold must be in [0, 1]")
-    if not (0.0 <= cfg.min_tail3_identity <= 1.0):
-        raise PrimerCliError("min_tail3_identity must be in [0, 1]")
-    if not (0.0 <= cfg.min_tail5_identity <= 1.0):
-        raise PrimerCliError("min_tail5_identity must be in [0, 1]")
+    require_positive_int(cfg.min_len, where="SinglePrimerWindowConfig.min_len", arg_name="min_len")
+    require_positive_int(cfg.max_len, where="SinglePrimerWindowConfig.max_len", arg_name="max_len")
+    if cfg.min_len > cfg.max_len:
+        raise validation_error(
+            what=f"min_len must be <= max_len (got {cfg.min_len} > {cfg.max_len})",
+            where="SinglePrimerWindowConfig",
+            fix="Lower min_len or raise max_len.",
+        )
+    require_positive_int(cfg.tail_len, where="SinglePrimerWindowConfig.tail_len", arg_name="tail_len")
+    require_fraction_closed01(
+        cfg.variability_threshold,
+        where="SinglePrimerWindowConfig.variability_threshold",
+        arg_name="variability_threshold",
+    )
+    require_fraction_closed01(
+        cfg.gap_fraction_threshold,
+        where="SinglePrimerWindowConfig.gap_fraction_threshold",
+        arg_name="gap_fraction_threshold",
+    )
+    require_fraction_closed01(
+        cfg.min_tail3_identity,
+        where="SinglePrimerWindowConfig.min_tail3_identity",
+        arg_name="min_tail3_identity",
+    )
+    require_fraction_closed01(
+        cfg.min_tail5_identity,
+        where="SinglePrimerWindowConfig.min_tail5_identity",
+        arg_name="min_tail5_identity",
+    )
+    require_non_negative_int(
+        cfg.max_variable_positions,
+        where="SinglePrimerWindowConfig.max_variable_positions",
+        arg_name="max_variable_positions",
+    )
+    require_non_negative_int(
+        cfg.max_high_gap_positions,
+        where="SinglePrimerWindowConfig.max_high_gap_positions",
+        arg_name="max_high_gap_positions",
+    )
     if len(cfg.unsuitable_char) != 1:
-        raise PrimerCliError("unsuitable_char must be a single character")
+        raise validation_error(
+            what=f"unsuitable_char must be a single character (got {cfg.unsuitable_char!r})",
+            where="SinglePrimerWindowConfig.unsuitable_char",
+            fix="Set unsuitable_char to one character (for example, 'N').",
+        )
 
 
 def _tail_identity_for_orientation(
@@ -93,7 +134,11 @@ def _tail_identity_for_orientation(
         tail5 = identities[:tail_len]
         tail3 = identities[:3]
     else:
-        raise PrimerCliError(f"Unsupported orientation: {orientation}")
+        raise validation_error(
+            what=f"unsupported orientation '{orientation}'",
+            where="_tail_identity_for_orientation",
+            fix="Use 'forward' or 'reverse'.",
+        )
 
     tail5_identity = sum(tail5) / len(tail5)
     tail3_identity = sum(tail3) / len(tail3)
@@ -175,9 +220,13 @@ def generate_single_primer_window_candidates(
         region_end = int(region.end_col)
 
         if region_start < 0 or region_end <= region_start or region_end > seq_len:
-            raise PrimerCliError(
-                "Invalid conserved region coordinates for candidate generation: "
-                f"idx={region_index}, start={region_start}, end={region_end}, len={seq_len}"
+            raise validation_error(
+                what=(
+                    "invalid conserved region coordinates for candidate generation: "
+                    f"idx={region_index}, start={region_start}, end={region_end}, len={seq_len}"
+                ),
+                where="generate_single_primer_window_candidates",
+                fix="Regenerate conserved regions on the same alignment used for consensus/profile.",
             )
 
         for w_len in range(config.min_len, config.max_len + 1):

@@ -6,6 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import (
+    require_not_directory,
+    require_positive_int,
+    validation_error,
+)
 from primer_cli.cli.commands.fetch import cmd_fetch
 from primer_cli.cli.commands.align import cmd_align
 from primer_cli.cli.commands.conserved import cmd_conserved
@@ -46,19 +51,35 @@ class PipelinePaths:
 
 def _parse_gene_names(raw_value: str) -> list[str]:
     if raw_value is None:
-        raise PrimerCliError("--gene_name is required")
+        raise validation_error(
+            what="missing required value for --genes",
+            where="run",
+            fix="Provide a gene name or a comma-separated list via --genes.",
+        )
     parts = [part.strip() for part in raw_value.split(",")]
     if any(not part for part in parts):
-        raise PrimerCliError("--gene_name contains an empty gene; use comma-separated non-empty names")
+        raise validation_error(
+            what="--genes contains an empty item",
+            where="run --genes",
+            fix="Use comma-separated non-empty gene names (example: 'vanA,vanB').",
+        )
     if not parts:
-        raise PrimerCliError("--gene_name is required")
+        raise validation_error(
+            what="--genes is empty",
+            where="run --genes",
+            fix="Provide at least one gene name.",
+        )
     return parts
 
 
 def _to_gene_subdir_name(gene_name: str) -> str:
     out = "".join(ch if (ch.isalnum() or ch in {"-", "_", "."}) else "_" for ch in gene_name.strip())
     if not out:
-        raise PrimerCliError(f"Gene name cannot be converted to folder name: {gene_name!r}")
+        raise validation_error(
+            what=f"gene name cannot be converted to a folder name: {gene_name!r}",
+            where="run --genes",
+            fix="Use a gene name containing letters, numbers, '-', '_' or '.'.",
+        )
     return out
 
 
@@ -89,13 +110,16 @@ def _build_paths(
 
 def _ensure_writable_dir(path: Path, label: str) -> None:
     if path.exists() and not path.is_dir():
-        raise PrimerCliError(f"{label} is not a directory: {path}")
+        raise validation_error(
+            what=f"{label} points to a file, expected directory: {path}",
+            where=f"pipeline {label}",
+            fix=f"Provide a directory path for {label}.",
+        )
     path.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_file_target(path: Path, label: str) -> None:
-    if path.exists() and path.is_dir():
-        raise PrimerCliError(f"{label} path is a directory, expected file: {path}")
+    require_not_directory(path, where=f"pipeline {label}", arg_name=label)
 
 
 def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path) -> int:
@@ -167,7 +191,11 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
 
 def _run_primers_stage(paths: PipelinePaths, args) -> None:
     if len(args.primer_unsuitable_char) != 1:
-        raise PrimerCliError("--primer-unsuitable-char must be a single character")
+        raise validation_error(
+            what="--primer-unsuitable-char must contain exactly one character",
+            where="predict/run --primer-unsuitable-char",
+            fix="Set a single character such as 'N'.",
+        )
 
     prep = load_and_prepare_primer_inputs(
         raw_fasta_path=paths.raw_fasta,
@@ -302,8 +330,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
 
 
 def cmd_pipeline(args) -> int:
-    if args.top_n <= 0:
-        raise PrimerCliError("--top-n must be > 0")
+    require_positive_int(int(args.top_n), where="run --top-n", arg_name="--top-n")
 
     genes = _parse_gene_names(args.gene_name)
     workdir = Path(args.workdir)
@@ -346,8 +373,7 @@ def cmd_predict(args) -> int:
     _ensure_file_target(paths.primers_json, "top primers JSON")
     _ensure_file_target(paths.primers_report, "top primers report")
 
-    if args.top_n <= 0:
-        raise PrimerCliError("--top-n must be > 0")
+    require_positive_int(int(args.top_n), where="predict --top-n", arg_name="--top-n")
 
     _run_primers_stage(paths=paths, args=args)
     return 0

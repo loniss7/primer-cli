@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 from typing import Iterable, Protocol
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_non_negative_int, require_positive_int, validation_error
 from primer_cli.utils.subprocess import run_cmd
 
 
@@ -85,21 +86,47 @@ class PrimerPairSpecificityMetrics:
 
 def _validate_cfg(cfg: BlastSpecificityConfig) -> None:
     if not cfg.blast_db:
-        raise PrimerCliError("blast_db must be provided for BLAST specificity checks")
-    if cfg.word_size <= 0:
-        raise PrimerCliError("word_size must be > 0")
-    if cfg.max_target_seqs <= 0:
-        raise PrimerCliError("max_target_seqs must be > 0")
-    if cfg.min_hit_len <= 0:
-        raise PrimerCliError("min_hit_len must be > 0")
-    if cfg.primer_3p_tail_len <= 0:
-        raise PrimerCliError("primer_3p_tail_len must be > 0")
-    if cfg.max_3p_tail_mismatches < 0:
-        raise PrimerCliError("max_3p_tail_mismatches must be >= 0")
-    if cfg.pair_min_amplicon <= 0 or cfg.pair_max_amplicon <= 0:
-        raise PrimerCliError("pair amplicon bounds must be > 0")
+        raise validation_error(
+            what="blast_db is empty",
+            where="BlastSpecificityConfig.blast_db",
+            fix="Provide a BLAST database path or name in blast_db.",
+        )
+    require_positive_int(cfg.word_size, where="BlastSpecificityConfig.word_size", arg_name="word_size")
+    require_positive_int(
+        cfg.max_target_seqs,
+        where="BlastSpecificityConfig.max_target_seqs",
+        arg_name="max_target_seqs",
+    )
+    require_positive_int(cfg.min_hit_len, where="BlastSpecificityConfig.min_hit_len", arg_name="min_hit_len")
+    require_positive_int(
+        cfg.primer_3p_tail_len,
+        where="BlastSpecificityConfig.primer_3p_tail_len",
+        arg_name="primer_3p_tail_len",
+    )
+    require_non_negative_int(
+        cfg.max_3p_tail_mismatches,
+        where="BlastSpecificityConfig.max_3p_tail_mismatches",
+        arg_name="max_3p_tail_mismatches",
+    )
+    require_positive_int(
+        cfg.pair_min_amplicon,
+        where="BlastSpecificityConfig.pair_min_amplicon",
+        arg_name="pair_min_amplicon",
+    )
+    require_positive_int(
+        cfg.pair_max_amplicon,
+        where="BlastSpecificityConfig.pair_max_amplicon",
+        arg_name="pair_max_amplicon",
+    )
     if cfg.pair_min_amplicon > cfg.pair_max_amplicon:
-        raise PrimerCliError("pair_min_amplicon must be <= pair_max_amplicon")
+        raise validation_error(
+            what=(
+                f"pair_min_amplicon must be <= pair_max_amplicon "
+                f"(got {cfg.pair_min_amplicon} > {cfg.pair_max_amplicon})"
+            ),
+            where="BlastSpecificityConfig",
+            fix="Lower pair_min_amplicon or raise pair_max_amplicon.",
+        )
 
 
 def _is_target_subject(subject_id: str, cfg: BlastSpecificityConfig) -> bool:

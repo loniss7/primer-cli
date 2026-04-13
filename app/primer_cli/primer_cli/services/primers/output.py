@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_positive_int
 from primer_cli.services.primers.blast_specificity import PrimerPairSpecificityMetrics
 from primer_cli.services.primers.final_scoring import ScoredPrimerPair
 from primer_cli.services.primers.pair_coverage import CandidatePrimerPairCoverage
@@ -72,8 +73,7 @@ def build_top_primer_pair_results(
     cfg: FinalOutputConfig | None = None,
 ) -> list[FinalPrimerPairResult]:
     config = cfg or FinalOutputConfig()
-    if config.top_n <= 0:
-        raise PrimerCliError("top_n must be > 0")
+    require_positive_int(config.top_n, where="FinalOutputConfig.top_n", arg_name="top_n")
 
     spec_map = pair_specificity_by_key or {}
     out: list[FinalPrimerPairResult] = []

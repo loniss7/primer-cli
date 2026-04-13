@@ -6,7 +6,7 @@ import shutil
 import sys
 import time
 
-from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_file_exists, require_not_directory, validation_error
 from primer_cli.services.aligners.mafft import MafftAligner
 
 
@@ -14,15 +14,16 @@ def cmd_align(args) -> int:
     in_path = Path(args.inp)
     out_path = Path(args.out)
 
-    if not in_path.exists():
-        raise PrimerCliError(f"Input FASTA does not exist: {in_path}")
-
-    if out_path.exists() and out_path.is_dir():
-        raise PrimerCliError(f"Output path is a directory, expected file: {out_path}")
+    require_file_exists(in_path, where="align --input", arg_name="--input")
+    require_not_directory(out_path, where="align --output", arg_name="--output")
 
     mafft_bin = args.mafft
     if shutil.which(mafft_bin) is None:
-        raise PrimerCliError(f"MAFFT binary not found in PATH: {mafft_bin}")
+        raise validation_error(
+            what=f"MAFFT executable not found: {mafft_bin}",
+            where="align --mafft",
+            fix="Install MAFFT or pass a valid executable path via --mafft.",
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -8,17 +8,20 @@ from Bio import AlignIO
 
 import skbio
 
-from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_file_exists, validation_error
 
 
 def read_alignment(path: Path) -> List[str]:
-    if not path.exists():
-        raise PrimerCliError(f"Alignment file not found: {path}")
+    require_file_exists(path, where="read_alignment", arg_name="path")
 
     try:
         aln = AlignIO.read(str(path), "fasta")
     except Exception as e:
-        raise PrimerCliError(f"Failed to read alignment: {path}") from e
+        raise validation_error(
+            what=f"failed to read alignment file: {path}",
+            where="read_alignment",
+            fix="Ensure the file exists and is a valid aligned FASTA.",
+        ) from e
 
     return [str(rec.seq) for rec in aln]
 

@@ -56,7 +56,7 @@ def _build_fetch_argv(console: Console) -> list[str]:
     argv = ["fetch", "--gene", gene, "--output", output]
     max_records = _ask(console, "Max sequences", "100")
     if max_records:
-        argv += ["--max", max_records]
+        argv += ["--max-sequences", max_records]
     email = _ask(console, "NCBI email (optional)", "")
     if email:
         argv += ["--email", email]
@@ -75,7 +75,7 @@ def _build_align_argv(console: Console) -> list[str]:
     out = _ask_required(console, "Output aligned FASTA path")
     mafft = _ask(console, "MAFFT binary", "mafft")
     mafft_args = _ask(console, "MAFFT args", "--auto")
-    argv = ["align", "--in", inp, "--out", out]
+    argv = ["align", "--input", inp, "--output", out]
     if mafft:
         argv += ["--mafft", mafft]
     if mafft_args:
@@ -89,7 +89,17 @@ def _build_conserved_argv(console: Console) -> list[str]:
     out = _ask_required(console, "Output regions JSON path")
     window = _ask_required(console, "Window size")
     quantile = _ask_required(console, "Top quantile (0..1)")
-    argv = ["conserved", "--inp", inp, "--out", out, "--window", window, "--quantile", quantile]
+    argv = [
+        "conserved",
+        "--input",
+        inp,
+        "--output",
+        out,
+        "--window-size",
+        window,
+        "--top-quantile",
+        quantile,
+    ]
     argv += _ask_extra_args(console)
     return argv
 
@@ -98,10 +108,10 @@ def _build_run_argv(console: Console) -> list[str]:
     gene_name = _ask_required(console, "Gene or comma-separated genes")
     workdir = _ask_required(console, "Workdir path")
     out = _ask_required(console, "Output directory")
-    argv = ["run", "--gene_name", gene_name, "--workdir", workdir, "--out", out]
+    argv = ["run", "--genes", gene_name, "--work-dir", workdir, "--output-dir", out]
     max_records = _ask(console, "Max sequences", "100")
     if max_records:
-        argv += ["--max", max_records]
+        argv += ["--max-sequences", max_records]
     mafft = _ask(console, "MAFFT binary", "mafft")
     if mafft:
         argv += ["--mafft", mafft]
@@ -119,10 +129,10 @@ def _build_run_argv(console: Console) -> list[str]:
         argv += ["--batch-size", batch_size]
     window = _ask(console, "Conserved window", "25")
     if window:
-        argv += ["--window", window]
+        argv += ["--window-size", window]
     quantile = _ask(console, "Conserved quantile", "0.8")
     if quantile:
-        argv += ["--quantile", quantile]
+        argv += ["--top-quantile", quantile]
     top_n = _ask(console, "Top N output", "20")
     if top_n:
         argv += ["--top-n", top_n]
@@ -137,13 +147,13 @@ def _build_predict_argv(console: Console) -> list[str]:
     out = _ask_required(console, "Output directory")
     argv = [
         "predict",
-        "--raw",
+        "--raw-fasta",
         raw,
-        "--alignment",
+        "--aligned-fasta",
         alignment,
-        "--regions",
+        "--conserved-regions",
         regions,
-        "--out",
+        "--output-dir",
         out,
     ]
     top_n = _ask(console, "Top N output", "20")

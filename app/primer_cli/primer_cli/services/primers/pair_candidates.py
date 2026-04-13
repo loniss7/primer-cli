@@ -6,6 +6,7 @@ from typing import Iterable, Protocol
 import primer3
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.validation import require_non_negative_float, require_positive_int, validation_error
 
 
 class _PrimerLike(Protocol):
@@ -53,14 +54,39 @@ def _safe_tm(value: object) -> float:
 
 
 def _validate_pairing_cfg(cfg: PrimerPairingConfig) -> None:
-    if cfg.min_amplicon_len <= 0 or cfg.max_amplicon_len <= 0:
-        raise PrimerCliError("Amplicon bounds must be > 0")
+    require_positive_int(
+        cfg.min_amplicon_len,
+        where="PrimerPairingConfig.min_amplicon_len",
+        arg_name="min_amplicon_len",
+    )
+    require_positive_int(
+        cfg.max_amplicon_len,
+        where="PrimerPairingConfig.max_amplicon_len",
+        arg_name="max_amplicon_len",
+    )
     if cfg.min_amplicon_len > cfg.max_amplicon_len:
-        raise PrimerCliError("min_amplicon_len must be <= max_amplicon_len")
+        raise validation_error(
+            what=(
+                f"min_amplicon_len must be <= max_amplicon_len "
+                f"(got {cfg.min_amplicon_len} > {cfg.max_amplicon_len})"
+            ),
+            where="PrimerPairingConfig",
+            fix="Lower min_amplicon_len or raise max_amplicon_len.",
+        )
     if cfg.preferred_min_amplicon_len > cfg.preferred_max_amplicon_len:
-        raise PrimerCliError("preferred_min_amplicon_len must be <= preferred_max_amplicon_len")
-    if cfg.max_tm_diff < 0:
-        raise PrimerCliError("max_tm_diff must be >= 0")
+        raise validation_error(
+            what=(
+                "preferred_min_amplicon_len must be <= preferred_max_amplicon_len "
+                f"(got {cfg.preferred_min_amplicon_len} > {cfg.preferred_max_amplicon_len})"
+            ),
+            where="PrimerPairingConfig",
+            fix="Adjust preferred amplicon bounds to a valid interval.",
+        )
+    require_non_negative_float(
+        cfg.max_tm_diff,
+        where="PrimerPairingConfig.max_tm_diff",
+        arg_name="max_tm_diff",
+    )
 
 
 def _split_by_orientation(primers: Iterable[_PrimerLike]) -> tuple[list[_PrimerLike], list[_PrimerLike]]:
@@ -73,7 +99,11 @@ def _split_by_orientation(primers: Iterable[_PrimerLike]) -> tuple[list[_PrimerL
         elif ori == "reverse":
             reverses.append(p)
         else:
-            raise PrimerCliError(f"Unsupported primer orientation: {p.orientation}")
+            raise validation_error(
+                what=f"unsupported primer orientation '{p.orientation}'",
+                where="_split_by_orientation",
+                fix="Use orientation values 'forward' or 'reverse'.",
+            )
     return forwards, reverses
 
 

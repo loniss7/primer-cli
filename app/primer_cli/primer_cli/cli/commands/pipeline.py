@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,6 +39,8 @@ from primer_cli.services.primers import (
     write_top_pairs_csv,
     write_top_pairs_json,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -376,16 +379,46 @@ def cmd_pipeline(args) -> int:
 
     _ensure_writable_dir(workdir, "workdir")
     _ensure_writable_dir(outdir, "out")
+    succeeded: list[str] = []
+    skipped: list[str] = []
+
     for gene in genes:
         gene_dir = _to_gene_subdir_name(gene)
-        rc = _run_single_gene_pipeline(
-            args=args,
-            gene_name=gene,
-            workdir=workdir / gene_dir,
-            outdir=outdir / gene_dir,
+        try:
+            rc = _run_single_gene_pipeline(
+                args=args,
+                gene_name=gene,
+                workdir=workdir / gene_dir,
+                outdir=outdir / gene_dir,
+            )
+            if rc != 0:
+                skipped.append(gene)
+                logger.warning("Skipping gene %s: pipeline returned non-zero code %s", gene, rc)
+                continue
+            succeeded.append(gene)
+        except PrimerCliError as e:
+            skipped.append(gene)
+            logger.warning("Skipping gene %s: %s", gene, e)
+            continue
+        except Exception as e:
+            skipped.append(gene)
+            logger.exception("Skipping gene %s due to unexpected error: %s", gene, e)
+            continue
+
+    if not succeeded:
+        raise PrimerCliError(
+            "Pipeline finished with no successful genes. "
+            f"All genes were skipped: {', '.join(skipped)}"
         )
-        if rc != 0:
-            raise PrimerCliError(f"Pipeline failed for gene {gene!r} with code {rc}")
+
+    if skipped:
+        logger.warning(
+            "Pipeline finished with partial success: %d succeeded, %d skipped",
+            len(succeeded),
+            len(skipped),
+        )
+    else:
+        logger.info("Pipeline finished successfully for all %d genes", len(succeeded))
 
     return 0
 

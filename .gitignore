@@ -67,6 +67,10 @@ data/*_top_pairs_report.txt
 # Project folders with generated/working data
 data/
 notebooks/
+work/
+out/
+work_*/
+out_*/
 
 # Local codex metadata
 .codex

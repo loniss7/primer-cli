@@ -15,6 +15,7 @@ from primer_cli.cli.commands.fetch import cmd_fetch
 from primer_cli.cli.commands.align import cmd_align
 from primer_cli.cli.commands.conserved import cmd_conserved
 from primer_cli.services.primers import (
+    BlastSpecificityConfig,
     FinalOutputConfig,
     PairCoverageConfig,
     PrimerPairingConfig,
@@ -28,6 +29,8 @@ from primer_cli.services.primers import (
     calculate_pair_coverage_on_msa,
     calculate_single_primer_metrics,
     calculate_single_primer_msa_coverage,
+    evaluate_pair_offtarget_specificity,
+    evaluate_single_primer_specificity,
     generate_single_primer_window_candidates,
     load_and_prepare_primer_inputs,
     score_primer_pairs,
@@ -306,10 +309,41 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     single_metrics_by_seq = {m.sequence.upper(): m for m in filtered}
     single_cov_by_seq = {m.sequence.upper(): m for m in single_cov}
     pair_cov_by_key = {(p.forward_seq.upper(), p.reverse_seq.upper()): p for p in pair_cov}
+    pair_specificity_by_key = None
+
+    if bool(getattr(args, "validate_blast", False)):
+        blast_db = str(getattr(args, "blast_db", "")).strip()
+        if not blast_db:
+            raise validation_error(
+                what="--validate-blast was set, but --blast-db is empty",
+                where="predict/run --blast-db",
+                fix="Provide BLAST DB path/name via --blast-db or disable --validate-blast.",
+            )
+
+        blast_cfg = BlastSpecificityConfig(
+            blastn_bin=str(getattr(args, "blastn_bin", "blastn")),
+            blast_db=blast_db,
+            task=str(getattr(args, "blast_task", "blastn-short")),
+            word_size=int(getattr(args, "blast_word_size", 7)),
+            evalue=float(getattr(args, "blast_evalue", 1000.0)),
+            max_target_seqs=int(getattr(args, "blast_max_target_seqs", 500)),
+            min_hit_identity=float(getattr(args, "blast_min_hit_identity", 80.0)),
+            min_hit_len=int(getattr(args, "blast_min_hit_len", 12)),
+            primer_3p_tail_len=int(getattr(args, "blast_primer_3p_tail_len", 5)),
+            max_3p_tail_mismatches=int(getattr(args, "blast_max_3p_tail_mismatches", 1)),
+            pair_min_amplicon=int(getattr(args, "blast_pair_min_amplicon", 60)),
+            pair_max_amplicon=int(getattr(args, "blast_pair_max_amplicon", 150)),
+        )
+        _, hits_by_sequence = evaluate_single_primer_specificity(filtered, blast_cfg)
+        pair_specificity = evaluate_pair_offtarget_specificity(pair_cov, hits_by_sequence, blast_cfg)
+        pair_specificity_by_key = {
+            (m.forward_seq.upper(), m.reverse_seq.upper()): m for m in pair_specificity
+        }
 
     scored = score_primer_pairs(
         pair_cov,
         single_primer_metrics_by_seq=single_metrics_by_seq,
+        pair_specificity_by_key=pair_specificity_by_key,
     )
     if not scored:
         raise PrimerCliError("Primers stage: no primer pairs left for final scoring")
@@ -319,6 +353,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
         pair_coverage_by_key=pair_cov_by_key,
         single_coverage_by_seq=single_cov_by_seq,
         single_metrics_by_seq=single_metrics_by_seq,
+        pair_specificity_by_key=pair_specificity_by_key,
         cfg=FinalOutputConfig(top_n=int(args.top_n)),
     )
     if not final_rows:

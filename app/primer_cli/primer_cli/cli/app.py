@@ -158,6 +158,57 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--pair-cov-gap-mode", choices=["ignore", "penalize", "hard_fail"], default="penalize")
     sp.add_argument("--pair-cov-max-gap-positions-per-primer", type=int, default=2)
     sp.add_argument("--pair-cov-max-amplicon-gap-fraction", type=float, default=0.35)
+    sp.add_argument(
+        "--validate-blast",
+        action="store_true",
+        help="Enable optional BLAST-based off-target specificity validation",
+    )
+    sp.add_argument(
+        "--blast-db",
+        default="",
+        help="BLAST nucleotide database path/name (required when --validate-blast is set)",
+    )
+    sp.add_argument("--blastn-bin", default="blastn", help="blastn executable name or path")
+    sp.add_argument("--blast-task", default="blastn-short", help="BLAST task for primer search")
+    sp.add_argument("--blast-word-size", type=int, default=7, help="BLAST word size")
+    sp.add_argument("--blast-evalue", type=float, default=1000.0, help="BLAST E-value threshold")
+    sp.add_argument("--blast-max-target-seqs", type=int, default=500, help="BLAST max target seqs")
+    sp.add_argument(
+        "--blast-min-hit-identity",
+        type=float,
+        default=80.0,
+        help="Minimum hit identity percent to keep BLAST hit",
+    )
+    sp.add_argument(
+        "--blast-min-hit-len",
+        type=int,
+        default=12,
+        help="Minimum hit alignment length to keep BLAST hit",
+    )
+    sp.add_argument(
+        "--blast-primer-3p-tail-len",
+        type=int,
+        default=5,
+        help="Primer 3' tail length used for high-risk off-target evaluation",
+    )
+    sp.add_argument(
+        "--blast-max-3p-tail-mismatches",
+        type=int,
+        default=1,
+        help="Maximum mismatches allowed in primer 3' tail for high-risk off-target hit",
+    )
+    sp.add_argument(
+        "--blast-pair-min-amplicon",
+        type=int,
+        default=60,
+        help="Minimum off-target amplicon length to count as risky in BLAST validation",
+    )
+    sp.add_argument(
+        "--blast-pair-max-amplicon",
+        type=int,
+        default=150,
+        help="Maximum off-target amplicon length to count as risky in BLAST validation",
+    )
 
 
 def _register_predict(sub: argparse._SubParsersAction) -> None:

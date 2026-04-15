@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from primer_cli.core.validation import (
     require_file_exists,
@@ -10,8 +11,23 @@ from primer_cli.core.validation import (
     validation_error,
 )
 from primer_cli.services.conserved.finder import ConservedRegionFinder
-from primer_cli.io.alignment import get_tabular_from_msa
+from primer_cli.io.alignment import get_tabular_from_msa, read_alignment
 from primer_cli.io.reports import write_regions_json
+import skbio
+
+
+_NON_ACGT_GAP_RE = re.compile(r"[^ACGT\-\.]")
+
+
+def _sanitize_degenerate_msa(in_path: Path) -> skbio.TabularMSA:
+    """Replace non-ACGT symbols with gaps to allow conservation scoring."""
+    seqs = read_alignment(in_path)
+    cleaned = []
+    for seq in seqs:
+        normalized = seq.upper().replace(".", "-")
+        normalized = _NON_ACGT_GAP_RE.sub("-", normalized)
+        cleaned.append(skbio.DNA(normalized))
+    return skbio.TabularMSA(cleaned)
 
 
 def cmd_conserved(args) -> int:
@@ -47,11 +63,23 @@ def cmd_conserved(args) -> int:
     try:
         regions = finder.find(msa)
     except ValueError as e:
-        raise validation_error(
-            what=str(e),
-            where="conserved",
-            fix="Check alignment length and conserved-region settings (window size and quantile).",
-        )
+        msg = str(e)
+        if "degenerate characters" in msg:
+            msa = _sanitize_degenerate_msa(in_path)
+            try:
+                regions = finder.find(msa)
+            except ValueError as e2:
+                raise validation_error(
+                    what=str(e2),
+                    where="conserved",
+                    fix="Check alignment length and conserved-region settings (window size and quantile).",
+                )
+        else:
+            raise validation_error(
+                what=msg,
+                where="conserved",
+                fix="Check alignment length and conserved-region settings (window size and quantile).",
+            )
 
     if not regions:
         raise validation_error(

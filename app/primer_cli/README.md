@@ -1,20 +1,60 @@
 # primer-cli
 
-CLI + library for primer design over aligned gene datasets.
+CLI-инструмент для подбора праймеров из MSA по пайплайну:
 
-## Project layout
+`NCBI fetch -> MAFFT align -> conserved windows -> primer prediction`
 
-- `primer_cli/`
-  - `cli/` - command-line entrypoints
-  - `core/` - shared models, config, exceptions
-  - `io/` - reading/writing FASTA, alignments, reports
-  - `services/` - domain logic (NCBI, MAFFT, conserved regions, primers)
-  - `utils/` - reusable helpers
-- `tests/`
-  - `unit/` - fast, isolated tests
-  - `integration/` - end-to-end/smoke checks on fixture data
+## Установка
 
-## Data layout
+```bash
+pip install -e .
+```
 
-Repository-level `data/` is the source-of-truth for local datasets used by notebooks and smoke tests.
-Generated ranking outputs are treated as runtime artifacts and should not be committed.
+Или из корня репозитория:
+
+```bash
+pip install -e ./app/primer_cli
+```
+
+## Команды
+
+```bash
+primer-cli --help
+primer-cli fetch --help
+primer-cli align --help
+primer-cli conserved --help
+primer-cli predict --help
+primer-cli run --help
+```
+
+## Полный запуск
+
+```bash
+export NCBI_EMAIL="you@example.com"
+
+primer-cli run \
+  --genes "vanA" \
+  --work-dir ./work \
+  --output-dir ./out \
+  --max-sequences 100
+```
+
+Для нескольких генов:
+
+```bash
+primer-cli run --genes "vanA,vanB,mcr-1" --work-dir ./work --output-dir ./out
+```
+
+Результаты сохраняются в `output-dir` (`top_primers.csv`, `top_primers.json`, `top_primers.txt`) и промежуточные данные в `work-dir`.
+
+## Разработка
+
+```bash
+pytest
+```
+
+## Примечания
+
+- Требуется Python `3.10+`.
+- Для стадии выравнивания нужен `mafft` в `PATH`.
+- Для загрузки из NCBI нужен доступ в интернет.

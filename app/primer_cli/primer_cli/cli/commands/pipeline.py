@@ -12,35 +12,26 @@ from primer_cli.core.validation import (
     require_positive_int,
     validation_error,
 )
-from primer_cli.cli.commands.fetch import cmd_fetch
-from primer_cli.cli.commands.align import cmd_align
-from primer_cli.cli.commands.conserved import cmd_conserved
-from primer_cli.services.primers import (
-    BlastSpecificityConfig,
-    FinalOutputConfig,
-    PairCoverageConfig,
-    PrimerPairingConfig,
-    SinglePrimerCoverageConfig,
-    SinglePrimerFilterConfig,
-    SinglePrimerWindowConfig,
-    build_candidate_primer_pairs,
-    build_consensus_and_msa_profile,
-    build_single_primers_from_windows,
-    build_top_primer_pair_results,
-    calculate_pair_coverage_on_msa,
-    calculate_single_primer_metrics,
-    calculate_single_primer_msa_coverage,
-    evaluate_pair_offtarget_specificity,
-    evaluate_single_primer_specificity,
-    generate_single_primer_window_candidates,
-    load_and_prepare_primer_inputs,
-    score_primer_pairs,
-    write_human_readable_report,
-    write_top_pairs_csv,
-    write_top_pairs_json,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def cmd_fetch(args) -> int:
+    from primer_cli.cli.commands.fetch import cmd_fetch as _cmd_fetch
+
+    return _cmd_fetch(args)
+
+
+def cmd_align(args) -> int:
+    from primer_cli.cli.commands.align import cmd_align as _cmd_align
+
+    return _cmd_align(args)
+
+
+def cmd_conserved(args) -> int:
+    from primer_cli.cli.commands.conserved import cmd_conserved as _cmd_conserved
+
+    return _cmd_conserved(args)
 
 
 @dataclass(frozen=True)
@@ -196,6 +187,43 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
 
 
 def _run_primers_stage(paths: PipelinePaths, args) -> None:
+    from primer_cli.services.primers.blast_specificity import (
+        BlastSpecificityConfig,
+        evaluate_pair_offtarget_specificity,
+        evaluate_single_primer_specificity,
+    )
+    from primer_cli.services.primers.data_prep import load_and_prepare_primer_inputs
+    from primer_cli.services.primers.final_scoring import score_primer_pairs
+    from primer_cli.services.primers.msa_coverage import (
+        SinglePrimerCoverageConfig,
+        calculate_single_primer_msa_coverage,
+    )
+    from primer_cli.services.primers.msa_profile import build_consensus_and_msa_profile
+    from primer_cli.services.primers.output import (
+        FinalOutputConfig,
+        build_top_primer_pair_results,
+        write_human_readable_report,
+        write_top_pairs_csv,
+        write_top_pairs_json,
+    )
+    from primer_cli.services.primers.pair_candidates import (
+        PrimerPairingConfig,
+        build_candidate_primer_pairs,
+    )
+    from primer_cli.services.primers.pair_coverage import (
+        PairCoverageConfig,
+        calculate_pair_coverage_on_msa,
+    )
+    from primer_cli.services.primers.single_primer_builder import build_single_primers_from_windows
+    from primer_cli.services.primers.single_primer_metrics import (
+        SinglePrimerFilterConfig,
+        calculate_single_primer_metrics,
+    )
+    from primer_cli.services.primers.window_candidates import (
+        SinglePrimerWindowConfig,
+        generate_single_primer_window_candidates,
+    )
+
     if len(args.primer_unsuitable_char) != 1:
         raise validation_error(
             what="--primer-unsuitable-char must contain exactly one character",
@@ -323,20 +351,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
                 fix="Provide BLAST DB path/name via --blast-db or disable --validate-blast.",
             )
 
-        blast_cfg = BlastSpecificityConfig(
-            blastn_bin=str(getattr(args, "blastn_bin", "blastn")),
-            blast_db=blast_db,
-            task=str(getattr(args, "blast_task", "blastn-short")),
-            word_size=int(getattr(args, "blast_word_size", 7)),
-            evalue=float(getattr(args, "blast_evalue", 1000.0)),
-            max_target_seqs=int(getattr(args, "blast_max_target_seqs", 500)),
-            min_hit_identity=float(getattr(args, "blast_min_hit_identity", 80.0)),
-            min_hit_len=int(getattr(args, "blast_min_hit_len", 12)),
-            primer_3p_tail_len=int(getattr(args, "blast_primer_3p_tail_len", 5)),
-            max_3p_tail_mismatches=int(getattr(args, "blast_max_3p_tail_mismatches", 1)),
-            pair_min_amplicon=int(getattr(args, "blast_pair_min_amplicon", 60)),
-            pair_max_amplicon=int(getattr(args, "blast_pair_max_amplicon", 150)),
-        )
+        blast_cfg = _build_blast_specificity_cfg(args, blast_db=blast_db)
         _, hits_by_sequence = evaluate_single_primer_specificity(filtered, blast_cfg)
         pair_specificity = evaluate_pair_offtarget_specificity(pair_cov, hits_by_sequence, blast_cfg)
         pair_specificity_by_key = {
@@ -445,3 +460,24 @@ def cmd_predict(args) -> int:
 
     _run_primers_stage(paths=paths, args=args)
     return 0
+
+
+def _build_blast_specificity_cfg(args, *, blast_db: str):
+    from primer_cli.services.primers.blast_specificity import BlastSpecificityConfig
+
+    return BlastSpecificityConfig(
+        blastn_bin=str(getattr(args, "blastn_bin", "blastn")),
+        blast_db=blast_db,
+        task=str(getattr(args, "blast_task", "blastn-short")),
+        word_size=int(getattr(args, "blast_word_size", 7)),
+        evalue=float(getattr(args, "blast_evalue", 1000.0)),
+        max_target_seqs=int(getattr(args, "blast_max_target_seqs", 500)),
+        min_hit_identity=float(getattr(args, "blast_min_hit_identity", 80.0)),
+        min_hit_len=int(getattr(args, "blast_min_hit_len", 12)),
+        primer_3p_tail_len=int(getattr(args, "blast_primer_3p_tail_len", 5)),
+        max_3p_tail_mismatches=int(getattr(args, "blast_max_3p_tail_mismatches", 1)),
+        pair_min_amplicon=int(getattr(args, "blast_pair_min_amplicon", 60)),
+        pair_max_amplicon=int(getattr(args, "blast_pair_max_amplicon", 150)),
+        target_subject_ids=tuple(getattr(args, "blast_target_subject_id", []) or []),
+        target_subject_substrings=tuple(getattr(args, "blast_target_subject_substring", []) or []),
+    )

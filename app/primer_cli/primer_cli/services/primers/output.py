@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
-from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.validation import require_positive_int
 from primer_cli.services.primers.blast_specificity import PrimerPairSpecificityMetrics
 from primer_cli.services.primers.final_scoring import ScoredPrimerPair
@@ -154,10 +153,6 @@ def _write_delimited(
 
 def write_top_pairs_csv(rows: list[FinalPrimerPairResult], path: str | Path) -> None:
     _write_delimited(rows, path, delimiter=",")
-
-
-def write_top_pairs_tsv(rows: list[FinalPrimerPairResult], path: str | Path) -> None:
-    _write_delimited(rows, path, delimiter="\t")
 
 
 def render_human_readable_report(rows: list[FinalPrimerPairResult]) -> str:

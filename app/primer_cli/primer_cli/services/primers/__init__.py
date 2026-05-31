@@ -1,99 +1,64 @@
-from .data_prep import PreparedPrimerInputs, load_and_prepare_primer_inputs
-from .msa_profile import MSAColumnMetrics, build_consensus_and_msa_profile
-from .window_candidates import (
-    SinglePrimerWindowCandidate,
-    SinglePrimerWindowConfig,
-    generate_single_primer_window_candidates,
-)
-from .single_primer_builder import (
-    CandidateSinglePrimer,
-    build_single_primers_from_windows,
-    extract_primer_from_consensus,
-    reverse_complement,
-)
-from .single_primer_metrics import (
-    SinglePrimerFilterConfig,
-    SinglePrimerMetrics,
-    calculate_single_primer_metrics,
-)
-from .msa_coverage import (
-    SinglePrimerCoverageConfig,
-    SinglePrimerCoverageMetrics,
-    calculate_single_primer_msa_coverage,
-)
-from .pair_candidates import (
-    CandidatePrimerPair,
-    PrimerPairingConfig,
-    build_candidate_primer_pairs,
-)
-from .pair_coverage import (
-    PairCoverageConfig,
-    CandidatePrimerPairCoverage,
-    calculate_pair_coverage_on_msa,
-)
-from .blast_specificity import (
-    BlastSpecificityConfig,
-    PrimerBlastHit,
-    SinglePrimerSpecificityMetrics,
-    PrimerPairSpecificityMetrics,
-    evaluate_single_primer_specificity,
-    evaluate_pair_offtarget_specificity,
-)
-from .final_scoring import (
-    PairFinalScoreConfig,
-    ScoredPrimerPair,
-    score_primer_pairs,
-)
-from .output import (
-    FinalOutputConfig,
-    FinalPrimerPairResult,
-    build_top_primer_pair_results,
-    write_top_pairs_json,
-    write_top_pairs_csv,
-    write_top_pairs_tsv,
-    render_human_readable_report,
-    write_human_readable_report,
-)
+from __future__ import annotations
 
-__all__ = [
-    "PreparedPrimerInputs",
-    "load_and_prepare_primer_inputs",
-    "MSAColumnMetrics",
-    "build_consensus_and_msa_profile",
-    "SinglePrimerWindowConfig",
-    "SinglePrimerWindowCandidate",
-    "generate_single_primer_window_candidates",
-    "CandidateSinglePrimer",
-    "reverse_complement",
-    "extract_primer_from_consensus",
-    "build_single_primers_from_windows",
-    "SinglePrimerFilterConfig",
-    "SinglePrimerMetrics",
-    "calculate_single_primer_metrics",
-    "SinglePrimerCoverageConfig",
-    "SinglePrimerCoverageMetrics",
-    "calculate_single_primer_msa_coverage",
-    "PrimerPairingConfig",
-    "CandidatePrimerPair",
-    "build_candidate_primer_pairs",
-    "PairCoverageConfig",
-    "CandidatePrimerPairCoverage",
-    "calculate_pair_coverage_on_msa",
-    "BlastSpecificityConfig",
-    "PrimerBlastHit",
-    "SinglePrimerSpecificityMetrics",
-    "PrimerPairSpecificityMetrics",
-    "evaluate_single_primer_specificity",
-    "evaluate_pair_offtarget_specificity",
-    "PairFinalScoreConfig",
-    "ScoredPrimerPair",
-    "score_primer_pairs",
-    "FinalOutputConfig",
-    "FinalPrimerPairResult",
-    "build_top_primer_pair_results",
-    "write_top_pairs_json",
-    "write_top_pairs_csv",
-    "write_top_pairs_tsv",
-    "render_human_readable_report",
-    "write_human_readable_report",
-]
+from importlib import import_module
+from typing import Any
+
+
+_EXPORT_TO_MODULE: dict[str, str] = {
+    "PreparedPrimerInputs": "primer_cli.services.primers.data_prep",
+    "load_and_prepare_primer_inputs": "primer_cli.services.primers.data_prep",
+    "MSAColumnMetrics": "primer_cli.services.primers.msa_profile",
+    "build_consensus_and_msa_profile": "primer_cli.services.primers.msa_profile",
+    "SinglePrimerWindowConfig": "primer_cli.services.primers.window_candidates",
+    "SinglePrimerWindowCandidate": "primer_cli.services.primers.window_candidates",
+    "generate_single_primer_window_candidates": "primer_cli.services.primers.window_candidates",
+    "CandidateSinglePrimer": "primer_cli.services.primers.single_primer_builder",
+    "reverse_complement": "primer_cli.services.primers.single_primer_builder",
+    "extract_primer_from_consensus": "primer_cli.services.primers.single_primer_builder",
+    "build_single_primers_from_windows": "primer_cli.services.primers.single_primer_builder",
+    "SinglePrimerFilterConfig": "primer_cli.services.primers.single_primer_metrics",
+    "SinglePrimerMetrics": "primer_cli.services.primers.single_primer_metrics",
+    "calculate_single_primer_metrics": "primer_cli.services.primers.single_primer_metrics",
+    "SinglePrimerCoverageConfig": "primer_cli.services.primers.msa_coverage",
+    "SinglePrimerCoverageMetrics": "primer_cli.services.primers.msa_coverage",
+    "calculate_single_primer_msa_coverage": "primer_cli.services.primers.msa_coverage",
+    "PrimerPairingConfig": "primer_cli.services.primers.pair_candidates",
+    "CandidatePrimerPair": "primer_cli.services.primers.pair_candidates",
+    "build_candidate_primer_pairs": "primer_cli.services.primers.pair_candidates",
+    "PairCoverageConfig": "primer_cli.services.primers.pair_coverage",
+    "CandidatePrimerPairCoverage": "primer_cli.services.primers.pair_coverage",
+    "calculate_pair_coverage_on_msa": "primer_cli.services.primers.pair_coverage",
+    "BlastSpecificityConfig": "primer_cli.services.primers.blast_specificity",
+    "PrimerBlastHit": "primer_cli.services.primers.blast_specificity",
+    "SinglePrimerSpecificityMetrics": "primer_cli.services.primers.blast_specificity",
+    "PrimerPairSpecificityMetrics": "primer_cli.services.primers.blast_specificity",
+    "evaluate_single_primer_specificity": "primer_cli.services.primers.blast_specificity",
+    "evaluate_pair_offtarget_specificity": "primer_cli.services.primers.blast_specificity",
+    "PairFinalScoreConfig": "primer_cli.services.primers.final_scoring",
+    "ScoredPrimerPair": "primer_cli.services.primers.final_scoring",
+    "score_primer_pairs": "primer_cli.services.primers.final_scoring",
+    "FinalOutputConfig": "primer_cli.services.primers.output",
+    "FinalPrimerPairResult": "primer_cli.services.primers.output",
+    "build_top_primer_pair_results": "primer_cli.services.primers.output",
+    "write_top_pairs_json": "primer_cli.services.primers.output",
+    "write_top_pairs_csv": "primer_cli.services.primers.output",
+    "render_human_readable_report": "primer_cli.services.primers.output",
+    "write_human_readable_report": "primer_cli.services.primers.output",
+}
+
+__all__ = sorted(_EXPORT_TO_MODULE)
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_TO_MODULE.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(module_name)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

@@ -241,6 +241,41 @@ pytest
 - Путь указывает на файл вместо папки
   - Для `--work-dir` и `--output-dir` требуется директория, а не файл.
 
+## BLAST specificity database
+
+For production-level specificity checks, use a local curated BLAST DB.
+
+Build:
+
+```bash
+DB_VERSION="amr_background_v2026_05"
+
+mkdir -p "data/blastdb/${DB_VERSION}/source"
+mkdir -p "data/blastdb/${DB_VERSION}/work"
+
+cat data/blastdb/${DB_VERSION}/source/*.fna \
+  > data/blastdb/${DB_VERSION}/work/subjects.raw.fna
+
+scripts/build_specificity_blastdb.sh "${DB_VERSION}"
+```
+
+Run:
+
+```bash
+primer-cli run \
+  --genes "vanA" \
+  --work-dir ./work/vanA \
+  --output-dir ./out/vanA \
+  --validate-blast \
+  --blast-db ./data/blastdb/amr_background_v2026_05/db/specificity_subjects \
+  --blast-target-subject-substring "target__vanA"
+```
+
+Important:
+- `--blast-db` must point to BLAST DB prefix, not to `.fna`.
+- Mark expected on-target hits using `--blast-target-subject-id` and/or `--blast-target-subject-substring`.
+- Do not commit large BLAST DB binary artifacts to Git.
+
 ## Roadmap
 
 - Расширенная автоматическая off-target проверка (BLAST) в основном пайплайне.

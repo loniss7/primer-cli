@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import shutil
 import sys
 import time
 
@@ -18,12 +17,6 @@ def cmd_align(args) -> int:
     require_not_directory(out_path, where="align --output", arg_name="--output")
 
     mafft_bin = args.mafft
-    if shutil.which(mafft_bin) is None:
-        raise validation_error(
-            what=f"MAFFT executable not found: {mafft_bin}",
-            where="align --mafft",
-            fix="Install MAFFT or pass a valid executable path via --mafft.",
-        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -14,22 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 def cmd_fetch(args) -> int:
-    gene = getattr(args, "gene", None)
+    gene = str(args.gene).strip()
     if not gene:
         raise validation_error(
-            what="missing required value for --gene",
-            where="fetch",
-            fix="Provide a gene symbol using --gene.",
+            what="--gene is empty",
+            where="fetch --gene",
+            fix="Provide a non-empty gene symbol.",
         )
 
-    output = getattr(args, "output", None)
-    if not output:
-        raise validation_error(
-            what="missing required value for --output",
-            where="fetch",
-            fix="Provide an output FASTA file path using --output.",
-        )
-    out_path = Path(output)
+    out_path = Path(args.output)
 
     require_not_directory(out_path, where="fetch --output", arg_name="--output")
 

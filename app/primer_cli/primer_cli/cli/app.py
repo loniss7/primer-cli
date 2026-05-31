@@ -2,20 +2,25 @@
 from __future__ import annotations
 
 import argparse
+from importlib import import_module
 import sys
 from typing import Callable, Optional
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.logging import configure_logging
 from primer_cli import __version__
-from primer_cli.cli.pretty_screen import (
-    clean_pretty_flag,
-    has_pretty_flag,
-    run_pretty_screen,
-)
 
 
 Handler = Callable[[argparse.Namespace], int]
+
+
+def _lazy_handler(module_name: str, func_name: str) -> Handler:
+    def _handler(args: argparse.Namespace) -> int:
+        module = import_module(module_name)
+        handler = getattr(module, func_name)
+        return handler(args)
+
+    return _handler
 
 
 def _add_common_args(p: argparse.ArgumentParser) -> None:
@@ -38,8 +43,6 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
 
 
 def _register_fetch(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.fetch import cmd_fetch
-
     sp = sub.add_parser("fetch", help="Download CDS sequences from NCBI")
     sp.add_argument("--gene", required=True, help="Gene symbol to query in NCBI")
     sp.add_argument("--output", required=True, help="Path to output FASTA file")
@@ -61,23 +64,19 @@ def _register_fetch(sub: argparse._SubParsersAction) -> None:
         help="Email for NCBI E-utilities (or set NCBI_EMAIL environment variable)",
     )
     sp.add_argument("--batch-size", type=int, default=20, help="Number of records per EFetch batch")
-    sp.set_defaults(func=cmd_fetch)
+    sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.fetch", "cmd_fetch"))
 
 
 def _register_align(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.align import cmd_align
-
     sp = sub.add_parser("align", help="Align FASTA sequences using MAFFT")
     sp.add_argument("--input", dest="inp", required=True, help="Path to input FASTA file")
     sp.add_argument("--output", dest="out", required=True, help="Path to output aligned FASTA file")
     sp.add_argument("--mafft", default="mafft", help="MAFFT executable name or path")
     sp.add_argument("--mafft-args", default="--auto", help="Additional MAFFT arguments")
-    sp.set_defaults(func=cmd_align)
+    sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.align", "cmd_align"))
 
 
 def _register_conserved(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.conserved import cmd_conserved
-
     sp = sub.add_parser("conserved", help="Find conserved regions in an alignment")
     sp.add_argument("--input", dest="inp", required=True, help="Path to input aligned FASTA file")
     sp.add_argument("--output", dest="out", required=True, help="Path to output conserved-regions JSON file")
@@ -89,7 +88,7 @@ def _register_conserved(sub: argparse._SubParsersAction) -> None:
         required=True,
         help="Top quantile threshold in range (0, 1]",
     )
-    sp.set_defaults(func=cmd_conserved)
+    sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.conserved", "cmd_conserved"))
 
 
 def _add_predict_args(sp: argparse.ArgumentParser) -> None:
@@ -209,11 +208,21 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
         default=150,
         help="Maximum off-target amplicon length to count as risky in BLAST validation",
     )
+    sp.add_argument(
+        "--blast-target-subject-id",
+        action="append",
+        default=[],
+        help="BLAST subject ID to treat as expected on-target. Can be repeated.",
+    )
+    sp.add_argument(
+        "--blast-target-subject-substring",
+        action="append",
+        default=[],
+        help="BLAST subject ID substring to treat as expected on-target. Can be repeated.",
+    )
 
 
 def _register_predict(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.pipeline import cmd_predict
-
     sp = sub.add_parser("predict", help="Build and rank primer pairs from prepared inputs")
     sp.add_argument("--raw-fasta", dest="raw", required=True, help="Path to raw (unaligned) FASTA file")
     sp.add_argument("--aligned-fasta", dest="alignment", required=True, help="Path to aligned FASTA file (MSA)")
@@ -225,12 +234,10 @@ def _register_predict(sub: argparse._SubParsersAction) -> None:
     )
     sp.add_argument("--output-dir", dest="out", required=True, help="Path to output directory for final reports")
     _add_predict_args(sp)
-    sp.set_defaults(func=cmd_predict)
+    sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.pipeline", "cmd_predict"))
     
 
 def _register_run(sub: argparse._SubParsersAction) -> None:
-    from primer_cli.cli.commands.pipeline import cmd_pipeline
-
     sp = sub.add_parser(
         "run",
         help="Run end-to-end pipeline: fetch -> align -> conserved -> primer prediction",
@@ -267,7 +274,7 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
         help="Top quantile threshold for conserved windows in range (0, 1]",
     )
     _add_predict_args(sp)
-    sp.set_defaults(func=cmd_pipeline)
+    sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.pipeline", "cmd_pipeline"))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -297,10 +304,12 @@ def _run_handler(handler: Handler, args: argparse.Namespace) -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    if has_pretty_flag(raw_argv):
+    if "--pretty-screen" in raw_argv:
+        from primer_cli.cli.pretty_screen import run_pretty_screen
+
         parser = build_parser()
         pretty_parser = build_parser()
-        clean_argv = clean_pretty_flag(raw_argv)
+        clean_argv = [x for x in raw_argv if x != "--pretty-screen"]
         default_log_level = "INFO"
         if clean_argv:
             try:

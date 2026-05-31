@@ -4,20 +4,28 @@ from pathlib import Path
 
 import pytest
 
-from primer_cli.services.primers import (
-    PairCoverageConfig,
-    PrimerPairingConfig,
+from primer_cli.services.primers.data_prep import load_and_prepare_primer_inputs
+from primer_cli.services.primers.msa_coverage import (
     SinglePrimerCoverageConfig,
-    SinglePrimerFilterConfig,
-    SinglePrimerWindowConfig,
-    build_candidate_primer_pairs,
-    build_consensus_and_msa_profile,
-    build_single_primers_from_windows,
-    calculate_pair_coverage_on_msa,
-    calculate_single_primer_metrics,
     calculate_single_primer_msa_coverage,
+)
+from primer_cli.services.primers.msa_profile import build_consensus_and_msa_profile
+from primer_cli.services.primers.pair_candidates import (
+    PrimerPairingConfig,
+    build_candidate_primer_pairs,
+)
+from primer_cli.services.primers.pair_coverage import (
+    PairCoverageConfig,
+    calculate_pair_coverage_on_msa,
+)
+from primer_cli.services.primers.single_primer_builder import build_single_primers_from_windows
+from primer_cli.services.primers.single_primer_metrics import (
+    SinglePrimerFilterConfig,
+    calculate_single_primer_metrics,
+)
+from primer_cli.services.primers.window_candidates import (
+    SinglePrimerWindowConfig,
     generate_single_primer_window_candidates,
-    load_and_prepare_primer_inputs,
 )
 
 

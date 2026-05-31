@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Optional
 
 import requests
 from requests.exceptions import RequestException
@@ -83,9 +83,8 @@ class NCBIClient:
 
         raise PrimerCliError(f"NCBI request failed after {attempts} attempts: {last_err}")
     
-    def create_request_query(self, gene_name: str):
-        query = f"{gene_name}[Gene] AND bacteria[Organism]"
-        return query
+    def create_request_query(self, gene_name: str) -> str:
+        return f"{gene_name}[Gene] AND bacteria[Organism]"
 
     def search_history(self, query: str, max_results: int) -> ESearchHistory:
         require_positive_int(max_results, where="NCBIClient.search_history", arg_name="max_results")
@@ -120,45 +119,6 @@ class NCBIClient:
 
         return ESearchHistory(webenv=webenv, query_key=query_key, count=count)
 
-    def search_uids(self, query: str, max_results: int) -> List[str]:
-        require_positive_int(max_results, where="NCBIClient.search_uids", arg_name="max_results")
-
-        params = {
-            "term": query,
-            "retmode": "json",
-            "retmax": max_results,
-        }
-        r = self._request("esearch.fcgi", params)
-        data = r.json()
-
-        try:
-            uids = data["esearchresult"]["idlist"]
-        except Exception as e:
-            raise validation_error(
-                what="unexpected NCBI esearch response format",
-                where="NCBIClient.search_uids",
-                fix="Retry request or inspect query and NCBI response payload.",
-            ) from e
-
-        if not uids:
-            return []
-
-        return uids
-
-    def fetch_fasta_by_uids(self, uids: Iterable[str]) -> str:
-        ids = ",".join(str(uid) for uid in uids)
-        if not ids:
-            return ""
-
-        params = {
-            "id": ids,
-            "rettype": "fasta_cds_na",
-            # EFetch FASTA must be requested as plain text.
-            "retmode": "text",
-        }
-        r = self._request("efetch.fcgi", params)
-        return r.text
-
     def fetch_fasta_by_history(
         self,
         history: ESearchHistory,
@@ -182,21 +142,6 @@ class NCBIClient:
         }
         r = self._request("efetch.fcgi", params)
         return r.text
-
-    def fetch_by_query(
-        self,
-        query: str,
-        max_results: int,
-        batch_size: int = 20,
-        on_progress: Optional[Callable[[int, int], None]] = None,
-    ):
-        history = self.search_history(query=query, max_results=max_results)
-        return self.fetch_by_history(
-            history=history,
-            max_results=max_results,
-            batch_size=batch_size,
-            on_progress=on_progress,
-        )
 
     def fetch_by_history(
         self,

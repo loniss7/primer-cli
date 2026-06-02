@@ -29,6 +29,8 @@ def test_predict_accepts_blast_target_subject_arguments() -> None:
             "regions.json",
             "--output-dir",
             "out",
+            "--blast-db",
+            "dummy_db",
             "--blast-target-subject-id",
             "target_seq_1",
             "--blast-target-subject-id",
@@ -42,3 +44,47 @@ def test_predict_accepts_blast_target_subject_arguments() -> None:
 
     assert args.blast_target_subject_id == ["target_seq_1", "target_seq_2"]
     assert args.blast_target_subject_substring == ["target__vanA", "vanA"]
+
+
+def test_predict_requires_blast_db() -> None:
+    parser = build_parser()
+
+    try:
+        parser.parse_args(
+            [
+                "predict",
+                "--raw-fasta",
+                "raw.fasta",
+                "--aligned-fasta",
+                "aligned.fasta",
+                "--conserved-regions",
+                "regions.json",
+                "--output-dir",
+                "out",
+            ]
+        )
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("predict should require --blast-db")
+
+
+def test_run_requires_blast_db() -> None:
+    parser = build_parser()
+
+    try:
+        parser.parse_args(
+            [
+                "run",
+                "--genes",
+                "vanA",
+                "--work-dir",
+                "work",
+                "--output-dir",
+                "out",
+            ]
+        )
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("run should require --blast-db")

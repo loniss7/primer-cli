@@ -4,19 +4,24 @@ import csv
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
+from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.validation import require_positive_int
 from primer_cli.services.primers.blast_specificity import PrimerPairSpecificityMetrics
-from primer_cli.services.primers.final_scoring import ScoredPrimerPair
-from primer_cli.services.primers.pair_coverage import CandidatePrimerPairCoverage
-from primer_cli.services.primers.single_primer_metrics import SinglePrimerMetrics
-from primer_cli.services.primers.msa_coverage import SinglePrimerCoverageMetrics
+
+if TYPE_CHECKING:
+    from primer_cli.services.primers.final_scoring import ScoredPrimerPair
+    from primer_cli.services.primers.msa_coverage import SinglePrimerCoverageMetrics
+    from primer_cli.services.primers.pair_coverage import CandidatePrimerPairCoverage
+    from primer_cli.services.primers.single_primer_metrics import SinglePrimerMetrics
 
 
 @dataclass(frozen=True)
 class FinalOutputConfig:
     top_n: int = 20
+    blast_db: str = ""
+    blast_task: str = "blastn-short"
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,13 @@ class FinalPrimerPairResult:
     forward_homodimer_tm: float
     reverse_homodimer_tm: float
     heterodimer_tm: float
+    blast_status: str
+    blast_db: str
+    blast_task: str
+    offtarget_amplicons_count: int
+    good_3prime_offtarget_amplicons_count: int
+    offtarget_pair_risk_score: float
+    blast_checked: bool
     offtarget_summary: str
     final_score: float
 
@@ -52,7 +64,7 @@ def _pair_key(forward: str, reverse: str) -> tuple[str, str]:
 
 def _format_offtarget_summary(spec: PrimerPairSpecificityMetrics | None) -> str:
     if spec is None:
-        return "offtarget:not_checked"
+        raise PrimerCliError("Final output requires BLAST specificity metrics for every primer pair")
     return (
         "offtarget_amplicons="
         f"{spec.potential_off_target_amplicons_count}; "
@@ -73,6 +85,8 @@ def build_top_primer_pair_results(
 ) -> list[FinalPrimerPairResult]:
     config = cfg or FinalOutputConfig()
     require_positive_int(config.top_n, where="FinalOutputConfig.top_n", arg_name="top_n")
+    if not config.blast_db:
+        raise PrimerCliError("Final output requires the BLAST database path used for validation")
 
     spec_map = pair_specificity_by_key or {}
     out: list[FinalPrimerPairResult] = []
@@ -93,6 +107,11 @@ def build_top_primer_pair_results(
         f_met = single_metrics_by_seq.get(f_seq)
         r_met = single_metrics_by_seq.get(r_seq)
         pair_spec = spec_map.get(pair_key)
+        if pair_spec is None:
+            raise PrimerCliError(
+                "Final output cannot be rendered because BLAST specificity metrics are missing "
+                f"for pair {f_seq}/{r_seq}"
+            )
 
         out.append(
             FinalPrimerPairResult(
@@ -117,6 +136,15 @@ def build_top_primer_pair_results(
                 forward_homodimer_tm=(f_met.homodimer_tm if f_met is not None else float("nan")),
                 reverse_homodimer_tm=(r_met.homodimer_tm if r_met is not None else float("nan")),
                 heterodimer_tm=pair_cov.heterodimer_tm,
+                blast_status="passed",
+                blast_db=config.blast_db,
+                blast_task=config.blast_task,
+                offtarget_amplicons_count=pair_spec.potential_off_target_amplicons_count,
+                good_3prime_offtarget_amplicons_count=(
+                    pair_spec.good_3prime_off_target_amplicons_count
+                ),
+                offtarget_pair_risk_score=pair_spec.off_target_pair_risk_score,
+                blast_checked=True,
                 offtarget_summary=_format_offtarget_summary(pair_spec),
                 final_score=scored.final_score,
             )

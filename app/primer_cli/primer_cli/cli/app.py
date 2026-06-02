@@ -160,14 +160,19 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--validate-blast",
         action="store_true",
-        help="Enable optional BLAST-based off-target specificity validation",
+        help="Deprecated no-op. BLAST specificity validation is always required.",
     )
     sp.add_argument(
         "--blast-db",
-        default="",
-        help="BLAST nucleotide database path/name (required when --validate-blast is set)",
+        required=True,
+        help="BLAST nucleotide database path/name used for mandatory specificity validation",
     )
     sp.add_argument("--blastn-bin", default="blastn", help="blastn executable name or path")
+    sp.add_argument(
+        "--blastdbcmd-bin",
+        default="blastdbcmd",
+        help="blastdbcmd executable name or path for BLAST DB preflight validation",
+    )
     sp.add_argument("--blast-task", default="blastn-short", help="BLAST task for primer search")
     sp.add_argument("--blast-word-size", type=int, default=7, help="BLAST word size")
     sp.add_argument("--blast-evalue", type=float, default=1000.0, help="BLAST E-value threshold")
@@ -220,6 +225,11 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
         default=[],
         help="BLAST subject ID substring to treat as expected on-target. Can be repeated.",
     )
+    sp.add_argument(
+        "--blast-target-subjects-file",
+        default="",
+        help="Optional file with one expected on-target BLAST subject ID per line.",
+    )
 
 
 def _register_predict(sub: argparse._SubParsersAction) -> None:
@@ -235,7 +245,7 @@ def _register_predict(sub: argparse._SubParsersAction) -> None:
     sp.add_argument("--output-dir", dest="out", required=True, help="Path to output directory for final reports")
     _add_predict_args(sp)
     sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.pipeline", "cmd_predict"))
-    
+
 
 def _register_run(sub: argparse._SubParsersAction) -> None:
     sp = sub.add_parser(
@@ -277,6 +287,39 @@ def _register_run(sub: argparse._SubParsersAction) -> None:
     sp.set_defaults(func=_lazy_handler("primer_cli.cli.commands.pipeline", "cmd_pipeline"))
 
 
+def _register_blastdb(sub: argparse._SubParsersAction) -> None:
+    sp = sub.add_parser("blastdb", help="Build and validate BLAST specificity databases")
+    nested = sp.add_subparsers(dest="blastdb_command", required=True, metavar="BLASTDB_COMMAND")
+
+    build = nested.add_parser("build", help="Build BLAST DB from YAML config")
+    build.add_argument("--config", required=True, help="Path to production YAML config")
+    build.set_defaults(func=_lazy_handler("primer_cli.cli.commands.blastdb", "cmd_blastdb_build"))
+
+    validate = nested.add_parser("validate", help="Validate an existing BLAST DB")
+    validate.add_argument("--db", required=True, help="BLAST DB prefix")
+    validate.add_argument("--blastdbcmd-bin", default="blastdbcmd", help="blastdbcmd executable name or path")
+    validate.set_defaults(
+        func=_lazy_handler("primer_cli.cli.commands.blastdb", "cmd_blastdb_validate")
+    )
+
+    info = nested.add_parser("info", help="Print blastdbcmd info for an existing BLAST DB")
+    info.add_argument("--db", required=True, help="BLAST DB prefix")
+    info.add_argument("--blastdbcmd-bin", default="blastdbcmd", help="blastdbcmd executable name or path")
+    info.set_defaults(func=_lazy_handler("primer_cli.cli.commands.blastdb", "cmd_blastdb_info"))
+
+
+def _register_production(sub: argparse._SubParsersAction) -> None:
+    sp = sub.add_parser("production", help="Run production workflow from YAML config")
+    nested = sp.add_subparsers(dest="production_command", required=True, metavar="PRODUCTION_COMMAND")
+
+    run = nested.add_parser("run", help="Run production vanA workflow from YAML config")
+    run.add_argument("--config", required=True, help="Path to production YAML config")
+    run.add_argument("--force-rebuild-db", action="store_true", help="Rebuild BLAST DB before running")
+    run.set_defaults(
+        func=_lazy_handler("primer_cli.cli.commands.production", "cmd_production_run")
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="primer-cli",
@@ -291,6 +334,8 @@ def build_parser() -> argparse.ArgumentParser:
     _register_conserved(sub)
     _register_run(sub)
     _register_predict(sub)
+    _register_blastdb(sub)
+    _register_production(sub)
 
     return p
 

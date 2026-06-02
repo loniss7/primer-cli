@@ -25,6 +25,7 @@ class _PairLike(Protocol):
 @dataclass(frozen=True)
 class BlastSpecificityConfig:
     blastn_bin: str = "blastn"
+    blastdbcmd_bin: str = "blastdbcmd"
     blast_db: str = ""
     task: str = "blastn-short"
     word_size: int = 7
@@ -39,6 +40,12 @@ class BlastSpecificityConfig:
 
     target_subject_ids: tuple[str, ...] = ()
     target_subject_substrings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BlastPreflightResult:
+    blastn_version: str
+    blastdb_info: str
 
 
 @dataclass(frozen=True)
@@ -135,6 +142,41 @@ def _is_target_subject(subject_id: str, cfg: BlastSpecificityConfig) -> bool:
     return any(token in subject_id for token in cfg.target_subject_substrings)
 
 
+def _first_nonempty_line(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def preflight_blast_specificity(cfg: BlastSpecificityConfig) -> BlastPreflightResult:
+    _validate_cfg(cfg)
+
+    try:
+        blastn_res = run_cmd([cfg.blastn_bin, "-version"], capture_stdout=True)
+    except PrimerCliError as e:
+        raise PrimerCliError(
+            f"BLAST preflight failed: blastn is unavailable or not runnable ({cfg.blastn_bin})."
+        ) from e
+
+    try:
+        blastdbcmd_res = run_cmd(
+            [cfg.blastdbcmd_bin, "-info", "-db", cfg.blast_db],
+            capture_stdout=True,
+        )
+    except PrimerCliError as e:
+        raise PrimerCliError(
+            "BLAST preflight failed: BLAST database is invalid or blastdbcmd is unavailable "
+            f"({cfg.blastdbcmd_bin}, db={cfg.blast_db})."
+        ) from e
+
+    return BlastPreflightResult(
+        blastn_version=_first_nonempty_line(blastn_res.stdout) or cfg.blastn_bin,
+        blastdb_info=blastdbcmd_res.stdout.strip(),
+    )
+
+
 def _tail_3prime_mismatch_count(
     qseq_aln: str,
     sseq_aln: str,
@@ -221,11 +263,32 @@ def _parse_blast_line(line: str, cfg: BlastSpecificityConfig) -> PrimerBlastHit 
     )
 
 
-def _run_primer_blast(sequence: str, query_id: str, cfg: BlastSpecificityConfig) -> list[PrimerBlastHit]:
+def _run_batch_primer_blast(
+    sequences: Iterable[str],
+    cfg: BlastSpecificityConfig,
+) -> dict[str, list[PrimerBlastHit]]:
+    unique_sequences: list[str] = []
+    seen: set[str] = set()
+    for sequence in sequences:
+        normalized = str(sequence).upper()
+        if not normalized or any(ch not in {"A", "C", "G", "T"} for ch in normalized):
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_sequences.append(normalized)
+
+    if not unique_sequences:
+        return {}
+
     with NamedTemporaryFile("w", suffix=".fa", delete=False, encoding="utf-8") as tmp:
         query_path = Path(tmp.name)
-        tmp.write(f">{query_id}\n")
-        tmp.write(sequence.upper() + "\n")
+        sequences_by_query_id: dict[str, str] = {}
+        for idx, sequence in enumerate(unique_sequences):
+            query_id = f"primer_{idx}"
+            sequences_by_query_id[query_id] = sequence
+            tmp.write(f">{query_id}\n")
+            tmp.write(sequence + "\n")
 
     outfmt = (
         "6 qseqid sseqid sstrand pident length mismatch gaps "
@@ -253,14 +316,16 @@ def _run_primer_blast(sequence: str, query_id: str, cfg: BlastSpecificityConfig)
     finally:
         query_path.unlink(missing_ok=True)
 
-    hits: list[PrimerBlastHit] = []
+    hits_by_sequence = {sequence: [] for sequence in unique_sequences}
     for line in res.stdout.splitlines():
         if not line.strip():
             continue
         parsed = _parse_blast_line(line, cfg)
         if parsed is not None:
-            hits.append(parsed)
-    return hits
+            sequence = sequences_by_query_id.get(parsed.query_id)
+            if sequence is not None:
+                hits_by_sequence[sequence].append(parsed)
+    return hits_by_sequence
 
 
 def evaluate_single_primer_specificity(
@@ -270,15 +335,17 @@ def evaluate_single_primer_specificity(
     _validate_cfg(cfg)
 
     metrics: list[SinglePrimerSpecificityMetrics] = []
-    hits_by_sequence: dict[str, list[PrimerBlastHit]] = {}
-
-    for idx, primer in enumerate(primers):
+    valid_primers: list[tuple[_SinglePrimerLike, str]] = []
+    for primer in primers:
         seq = str(primer.sequence).upper()
         if not seq or any(ch not in {"A", "C", "G", "T"} for ch in seq):
             continue
+        valid_primers.append((primer, seq))
 
-        primer_hits = _run_primer_blast(seq, f"primer_{idx}", cfg)
-        hits_by_sequence[seq] = primer_hits
+    hits_by_sequence = _run_batch_primer_blast((seq for _, seq in valid_primers), cfg)
+
+    for primer, seq in valid_primers:
+        primer_hits = hits_by_sequence.get(seq, [])
 
         significant_hits = len(primer_hits)
         off_target_hits = [h for h in primer_hits if h.is_off_target]

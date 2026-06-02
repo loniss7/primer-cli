@@ -108,7 +108,18 @@ def _build_run_argv(console: Console) -> list[str]:
     gene_name = _ask_required(console, "Gene or comma-separated genes")
     workdir = _ask_required(console, "Workdir path")
     out = _ask_required(console, "Output directory")
-    argv = ["run", "--genes", gene_name, "--work-dir", workdir, "--output-dir", out]
+    blast_db = _ask_required(console, "BLAST DB path")
+    argv = [
+        "run",
+        "--genes",
+        gene_name,
+        "--work-dir",
+        workdir,
+        "--output-dir",
+        out,
+        "--blast-db",
+        blast_db,
+    ]
     max_records = _ask(console, "Max sequences", "100")
     if max_records:
         argv += ["--max-sequences", max_records]
@@ -145,6 +156,7 @@ def _build_predict_argv(console: Console) -> list[str]:
     alignment = _ask_required(console, "Alignment FASTA path")
     regions = _ask_required(console, "Conserved regions JSON path")
     out = _ask_required(console, "Output directory")
+    blast_db = _ask_required(console, "BLAST DB path")
     argv = [
         "predict",
         "--raw-fasta",
@@ -155,6 +167,8 @@ def _build_predict_argv(console: Console) -> list[str]:
         regions,
         "--output-dir",
         out,
+        "--blast-db",
+        blast_db,
     ]
     top_n = _ask(console, "Top N output", "20")
     if top_n:

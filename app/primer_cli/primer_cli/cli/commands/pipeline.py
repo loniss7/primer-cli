@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
 
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.core.validation import (
+    require_file_exists,
     require_not_directory,
     require_positive_int,
     validation_error,
@@ -44,6 +47,17 @@ class PipelinePaths:
     primers_csv: Path
     primers_json: Path
     primers_report: Path
+
+
+@dataclass(frozen=True)
+class BlastRejectedPair:
+    forward_sequence: str
+    reverse_sequence: str
+    blast_status: str
+    reject_reason: str
+    offtarget_amplicons_count: int
+    good_3prime_offtarget_amplicons_count: int
+    offtarget_pair_risk_score: float
 
 
 def _parse_gene_names(raw_value: str) -> list[str]:
@@ -119,6 +133,169 @@ def _ensure_file_target(path: Path, label: str) -> None:
     require_not_directory(path, where=f"pipeline {label}", arg_name=label)
 
 
+def _read_target_subject_ids_from_file(path: Path) -> tuple[str, ...]:
+    require_file_exists(
+        path,
+        where="predict/run --blast-target-subjects-file",
+        arg_name="--blast-target-subjects-file",
+    )
+
+    subject_ids: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        subject_id = line.split("\t", 1)[0].strip()
+        if subject_id.lower() == "subject_id":
+            continue
+        subject_ids.append(subject_id)
+    return tuple(subject_id for subject_id in subject_ids if subject_id)
+
+
+def _require_blast_db_arg(args) -> str:
+    blast_db = str(getattr(args, "blast_db", "")).strip()
+    if not blast_db:
+        raise validation_error(
+            what="--blast-db is empty",
+            where="predict/run --blast-db",
+            fix="Provide a BLAST DB path/name for mandatory specificity validation.",
+        )
+    return blast_db
+
+
+def _reports_dir(paths: PipelinePaths) -> Path:
+    return paths.outdir / "reports"
+
+
+def _write_rejected_pairs_csv(rows: list[BlastRejectedPair], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(BlastRejectedPair.__dataclass_fields__.keys())
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row.__dict__)
+
+
+def _write_blast_hits_tsv(hits_by_sequence: dict[str, list], path: Path) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "query_sequence",
+        "query_id",
+        "subject_id",
+        "sstrand",
+        "pident",
+        "align_len",
+        "mismatch",
+        "gaps",
+        "qstart",
+        "qend",
+        "sstart",
+        "send",
+        "evalue",
+        "bitscore",
+        "qlen",
+        "qseq_aln",
+        "sseq_aln",
+        "is_off_target",
+        "has_good_3prime_match",
+    ]
+    rows_written = 0
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        for sequence, hits in sorted(hits_by_sequence.items()):
+            for hit in hits:
+                rows_written += 1
+                writer.writerow(
+                    {
+                        "query_sequence": sequence,
+                        "query_id": hit.query_id,
+                        "subject_id": hit.subject_id,
+                        "sstrand": hit.sstrand,
+                        "pident": hit.pident,
+                        "align_len": hit.align_len,
+                        "mismatch": hit.mismatch,
+                        "gaps": hit.gaps,
+                        "qstart": hit.qstart,
+                        "qend": hit.qend,
+                        "sstart": hit.sstart,
+                        "send": hit.send,
+                        "evalue": hit.evalue,
+                        "bitscore": hit.bitscore,
+                        "qlen": hit.qlen,
+                        "qseq_aln": hit.qseq_aln,
+                        "sseq_aln": hit.sseq_aln,
+                        "is_off_target": hit.is_off_target,
+                        "has_good_3prime_match": hit.has_good_3prime_match,
+                    }
+                )
+    return rows_written
+
+
+def _write_blast_summary_json(summary: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _apply_blast_gate(
+    pair_cov,
+    pair_specificity_by_key,
+) -> tuple[list, list[BlastRejectedPair]]:
+    validated_pairs = []
+    rejected_pairs: list[BlastRejectedPair] = []
+
+    for pair in pair_cov:
+        pair_key = (pair.forward_seq.upper(), pair.reverse_seq.upper())
+        spec = pair_specificity_by_key.get(pair_key)
+        if spec is None:
+            rejected_pairs.append(
+                BlastRejectedPair(
+                    forward_sequence=pair.forward_seq.upper(),
+                    reverse_sequence=pair.reverse_seq.upper(),
+                    blast_status="rejected",
+                    reject_reason="missing_specificity_metrics",
+                    offtarget_amplicons_count=0,
+                    good_3prime_offtarget_amplicons_count=0,
+                    offtarget_pair_risk_score=0.0,
+                )
+            )
+            continue
+        if spec.good_3prime_off_target_amplicons_count > 0:
+            rejected_pairs.append(
+                BlastRejectedPair(
+                    forward_sequence=pair.forward_seq.upper(),
+                    reverse_sequence=pair.reverse_seq.upper(),
+                    blast_status="rejected",
+                    reject_reason="good_3prime_offtarget_amplicon_detected",
+                    offtarget_amplicons_count=spec.potential_off_target_amplicons_count,
+                    good_3prime_offtarget_amplicons_count=(
+                        spec.good_3prime_off_target_amplicons_count
+                    ),
+                    offtarget_pair_risk_score=spec.off_target_pair_risk_score,
+                )
+            )
+            continue
+        if spec.potential_off_target_amplicons_count > 0:
+            rejected_pairs.append(
+                BlastRejectedPair(
+                    forward_sequence=pair.forward_seq.upper(),
+                    reverse_sequence=pair.reverse_seq.upper(),
+                    blast_status="rejected",
+                    reject_reason="offtarget_amplicon_detected",
+                    offtarget_amplicons_count=spec.potential_off_target_amplicons_count,
+                    good_3prime_offtarget_amplicons_count=(
+                        spec.good_3prime_off_target_amplicons_count
+                    ),
+                    offtarget_pair_risk_score=spec.off_target_pair_risk_score,
+                )
+            )
+            continue
+        validated_pairs.append(pair)
+
+    return validated_pairs, rejected_pairs
+
+
 def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path) -> int:
     _ensure_writable_dir(workdir, "workdir")
     _ensure_writable_dir(outdir, "out")
@@ -188,9 +365,9 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
 
 def _run_primers_stage(paths: PipelinePaths, args) -> None:
     from primer_cli.services.primers.blast_specificity import (
-        BlastSpecificityConfig,
         evaluate_pair_offtarget_specificity,
         evaluate_single_primer_specificity,
+        preflight_blast_specificity,
     )
     from primer_cli.services.primers.data_prep import load_and_prepare_primer_inputs
     from primer_cli.services.primers.final_scoring import score_primer_pairs
@@ -340,26 +517,42 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     single_metrics_by_seq = {m.sequence.upper(): m for m in filtered}
     single_cov_by_seq = {m.sequence.upper(): m for m in single_cov}
     pair_cov_by_key = {(p.forward_seq.upper(), p.reverse_seq.upper()): p for p in pair_cov}
-    pair_specificity_by_key = None
+    blast_db = _require_blast_db_arg(args)
+    blast_cfg = _build_blast_specificity_cfg(args, blast_db=blast_db)
+    preflight = preflight_blast_specificity(blast_cfg)
+    _, hits_by_sequence = evaluate_single_primer_specificity(filtered, blast_cfg)
+    pair_specificity = evaluate_pair_offtarget_specificity(pair_cov, hits_by_sequence, blast_cfg)
+    pair_specificity_by_key = {
+        (m.forward_seq.upper(), m.reverse_seq.upper()): m for m in pair_specificity
+    }
+    validated_pair_cov, rejected_pairs = _apply_blast_gate(pair_cov, pair_specificity_by_key)
 
-    if bool(getattr(args, "validate_blast", False)):
-        blast_db = str(getattr(args, "blast_db", "")).strip()
-        if not blast_db:
-            raise validation_error(
-                what="--validate-blast was set, but --blast-db is empty",
-                where="predict/run --blast-db",
-                fix="Provide BLAST DB path/name via --blast-db or disable --validate-blast.",
-            )
+    reports_dir = _reports_dir(paths)
+    blast_hits_path = reports_dir / "blast_hits.tsv"
+    rejected_pairs_path = reports_dir / "rejected_pairs.csv"
+    blast_summary_path = reports_dir / "blast_summary.json"
+    blast_hits_count = _write_blast_hits_tsv(hits_by_sequence, blast_hits_path)
+    _write_rejected_pairs_csv(rejected_pairs, rejected_pairs_path)
+    _write_blast_summary_json(
+        {
+            "blast_db": blast_db,
+            "blast_task": blast_cfg.task,
+            "blastn_version": preflight.blastn_version,
+            "pair_count_before_gate": len(pair_cov),
+            "pair_count_after_gate": len(validated_pair_cov),
+            "rejected_pair_count": len(rejected_pairs),
+            "unique_primer_sequences_blasted": len(hits_by_sequence),
+            "blast_hit_count": blast_hits_count,
+            "blast_db_info": preflight.blastdb_info,
+        },
+        blast_summary_path,
+    )
 
-        blast_cfg = _build_blast_specificity_cfg(args, blast_db=blast_db)
-        _, hits_by_sequence = evaluate_single_primer_specificity(filtered, blast_cfg)
-        pair_specificity = evaluate_pair_offtarget_specificity(pair_cov, hits_by_sequence, blast_cfg)
-        pair_specificity_by_key = {
-            (m.forward_seq.upper(), m.reverse_seq.upper()): m for m in pair_specificity
-        }
+    if not validated_pair_cov:
+        raise PrimerCliError("BLAST specificity validation rejected all primer pairs")
 
     scored = score_primer_pairs(
-        pair_cov,
+        validated_pair_cov,
         single_primer_metrics_by_seq=single_metrics_by_seq,
         pair_specificity_by_key=pair_specificity_by_key,
     )
@@ -372,7 +565,11 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
         single_coverage_by_seq=single_cov_by_seq,
         single_metrics_by_seq=single_metrics_by_seq,
         pair_specificity_by_key=pair_specificity_by_key,
-        cfg=FinalOutputConfig(top_n=int(args.top_n)),
+        cfg=FinalOutputConfig(
+            top_n=int(args.top_n),
+            blast_db=blast_db,
+            blast_task=blast_cfg.task,
+        ),
     )
     if not final_rows:
         raise PrimerCliError("Primers stage: no primer pairs passed the final selection")
@@ -465,8 +662,14 @@ def cmd_predict(args) -> int:
 def _build_blast_specificity_cfg(args, *, blast_db: str):
     from primer_cli.services.primers.blast_specificity import BlastSpecificityConfig
 
+    target_subject_ids = list(getattr(args, "blast_target_subject_id", []) or [])
+    target_subjects_file = str(getattr(args, "blast_target_subjects_file", "")).strip()
+    if target_subjects_file:
+        target_subject_ids.extend(_read_target_subject_ids_from_file(Path(target_subjects_file)))
+
     return BlastSpecificityConfig(
         blastn_bin=str(getattr(args, "blastn_bin", "blastn")),
+        blastdbcmd_bin=str(getattr(args, "blastdbcmd_bin", "blastdbcmd")),
         blast_db=blast_db,
         task=str(getattr(args, "blast_task", "blastn-short")),
         word_size=int(getattr(args, "blast_word_size", 7)),
@@ -478,6 +681,6 @@ def _build_blast_specificity_cfg(args, *, blast_db: str):
         max_3p_tail_mismatches=int(getattr(args, "blast_max_3p_tail_mismatches", 1)),
         pair_min_amplicon=int(getattr(args, "blast_pair_min_amplicon", 60)),
         pair_max_amplicon=int(getattr(args, "blast_pair_max_amplicon", 150)),
-        target_subject_ids=tuple(getattr(args, "blast_target_subject_id", []) or []),
+        target_subject_ids=tuple(target_subject_ids),
         target_subject_substrings=tuple(getattr(args, "blast_target_subject_substring", []) or []),
     )

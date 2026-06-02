@@ -1,0 +1,74 @@
+project:
+  name: vanA_primer_design
+  target_gene: vanA
+  version: "2026-06-01"
+
+runtime:
+  ncbi_email: "bioinformatics-team@example.org"
+  work_dir: "../../work/production_vana"
+  output_dir: "../../out/production_vana"
+  reports_dir: "../../reports/production_vana"
+  downloads_dir: "../../downloads/production_vana"
+
+tools:
+  datasets_bin: "datasets"
+  mafft_bin: "mafft"
+  blastn_bin: "blastn"
+  makeblastdb_bin: "makeblastdb"
+  blastdbcmd_bin: "blastdbcmd"
+
+specificity_db:
+  out_prefix: "../../blastdb/vanA_specificity_panel"
+  title: "vanA production specificity panel"
+  dbtype: "nucl"
+  blastdb_version: 5
+  parse_seqids: true
+
+  ncbi_datasets:
+    assembly_level:
+      - complete
+      - chromosome
+    target_taxa:
+      - "Enterococcus faecium"
+      - "Enterococcus faecalis"
+    near_target_taxa:
+      - "Enterococcus hirae"
+      - "Enterococcus durans"
+      - "Enterococcus gallinarum"
+      - "Enterococcus casseliflavus"
+    background_taxa:
+      - "Staphylococcus aureus"
+      - "Streptococcus pneumoniae"
+      - "Streptococcus pyogenes"
+      - "Listeria monocytogenes"
+      - "Lactococcus lactis"
+
+  local_fasta:
+    - path: "../../data/local_negative_panel.fna"
+      role: "local_background"
+    - path: "../../data/target_gene_contexts.fna"
+      role: "target_context"
+
+  target_subjects_file: "../../data/on_target_subjects.tsv"
+
+design:
+  max_sequences: 500
+  mafft_args: "--auto --nuc"
+  window_size: 25
+  top_quantile: 0.8
+  top_n: 20
+
+blast_specificity:
+  required: true
+  task: "blastn-short"
+  word_size: 7
+  evalue: 1000
+  max_target_seqs: 500
+  min_hit_identity: 80.0
+  min_hit_len: 12
+  primer_3p_tail_len: 5
+  max_3p_tail_mismatches: 1
+  reject_any_offtarget_amplicon: true
+  reject_good_3prime_offtarget_hit: true
+  pair_min_amplicon: 60
+  pair_max_amplicon: 150

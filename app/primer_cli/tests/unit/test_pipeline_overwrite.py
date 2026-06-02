@@ -60,6 +60,8 @@ def test_run_pipeline_overwrites_existing_output_files(
             str(workdir),
             "--output-dir",
             str(outdir),
+            "--blast-db",
+            "dummy_db",
         ]
     )
     rc = pipeline.cmd_pipeline(args)
@@ -117,6 +119,8 @@ def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
             str(workdir),
             "--output-dir",
             str(outdir),
+            "--blast-db",
+            "dummy_db",
         ]
     )
     rc = pipeline.cmd_pipeline(args)

@@ -168,6 +168,37 @@ def test_target_catalog_is_locus_aware(tmp_path: Path) -> None:
     assert outside.reason == "outside_target_locus"
 
 
+def test_target_catalog_matches_lcl_subject_aliases(tmp_path: Path) -> None:
+    subjects_tsv = tmp_path / "subjects.tsv"
+    target_loci_tsv = tmp_path / "target_loci.tsv"
+    subjects_tsv.write_text(
+        "subject_id\torganism\ttaxid\trole\tsource\tsource_file\n"
+        "lcl|subject_1\tEnterococcus faecium\t\ttarget_context\tLocal\tpanel.fna\n",
+        encoding="utf-8",
+    )
+    target_loci_tsv.write_text(
+        "subject_id\tlocus_id\tgene\tstart\tend\tstrand\n"
+        "lcl|subject_1\tvanA_locus_1\tvanA\t100\t300\tplus\n",
+        encoding="utf-8",
+    )
+    cfg = BlastSpecificityConfig(
+        blast_db="dummy_db",
+        subjects_tsv=str(subjects_tsv),
+        target_loci_tsv=str(target_loci_tsv),
+    )
+
+    catalog = load_target_catalog(cfg)
+    assessment = catalog.classify(
+        subject_id="subject_1",
+        hit_start=120,
+        hit_end=139,
+        policy_mode="exploratory",
+    )
+
+    assert assessment.target_status == "on_target"
+    assert assessment.locus_id == "vanA_locus_1"
+
+
 def test_target_catalog_is_fail_closed_in_production_when_locus_missing(tmp_path: Path) -> None:
     subjects_tsv = tmp_path / "subjects.tsv"
     subjects_tsv.write_text(

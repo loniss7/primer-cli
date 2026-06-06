@@ -19,7 +19,17 @@ What the config controls:
 - `near_target_taxa`: closely related taxa that should still be represented in the DB
 - `background_taxa`: off-target background panel
 - `local_fasta`: local FASTA files appended to the specificity DB build
-- `target_subjects_file`: file generated during BLAST DB build with on-target subject IDs
+- `subjects_file`: file generated during BLAST DB build with subject metadata
+- `target_loci_file`: file generated during BLAST DB build with on-target locus coordinates
+
+`production run` requires `blast_specificity.policy_mode=production`. In this mode the
+specificity service is fail-closed and requires both `subjects.tsv` and `target_loci.tsv`.
+
+Target-context FASTA records should carry locus annotations in the header, for example:
+
+```text
+>ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA
+```
 
 How to build the BLAST DB manually:
 
@@ -42,15 +52,23 @@ What `production run` does:
 5. aligns the QC-passed sequences with MAFFT
 6. finds conserved regions
 7. predicts primers
-8. runs mandatory BLAST specificity validation
+8. runs staged BLAST specificity validation:
+   - pre-BLAST score
+   - diversity-biased pair ordering
+   - BLAST on top-K unique primers
+   - automatic pool expansion if needed
+   - locus-aware policy evaluation
 9. writes final reports
 
 Reports written by the workflow include:
 
 - `reports/production_vana/vanA_fetch_qc.json`
 - `reports/blast_hits.tsv`
+- `reports/predicted_amplicons.tsv`
+- `reports/pair_specificity.tsv`
 - `reports/blast_summary.json`
-- `reports/rejected_pairs.csv`
+- `reports/specificity_manifest.json`
 
-`rejected_pairs.csv` lists primer pairs removed by the BLAST gate and whether the pair had
-missing specificity metrics, generic off-target amplicons, or high-risk good 3-prime hits.
+`pair_specificity.tsv` is the main decision table for specificity v2. It records the pair
+status (`PASSED`, `PASSED_WITH_WARNINGS`, `REJECTED`, `UNRESOLVED`) together with the
+policy reason and predicted on-target/off-target amplicon counts.

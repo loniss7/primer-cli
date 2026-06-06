@@ -14,8 +14,14 @@ from primer_cli.services.specificity.models import (
 )
 
 
-_ON_TARGET_STATUSES = {"on_target"}
 _TARGETISH_ROLES = {"target", "target_context"}
+
+
+def _subject_key(subject_id: str) -> str:
+    normalized = subject_id.strip()
+    if normalized.startswith("lcl|"):
+        return normalized[4:]
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -33,8 +39,9 @@ class TargetCatalog:
         hit_end: int,
         policy_mode: str,
     ) -> BindingTargetAssessment:
-        subject = self.subjects.get(subject_id)
-        loci = self.loci_by_subject.get(subject_id, [])
+        key = _subject_key(subject_id)
+        subject = self.subjects.get(key)
+        loci = self.loci_by_subject.get(key, [])
         left = min(hit_start, hit_end)
         right = max(hit_start, hit_end)
 
@@ -68,7 +75,7 @@ class TargetCatalog:
                 subject_role=subject.role,
             )
 
-        if subject_id in self.legacy_target_subject_ids:
+        if key in self.legacy_target_subject_ids:
             return BindingTargetAssessment(
                 target_status="on_target" if policy_mode != "production" else "unresolved",
                 reason=(
@@ -112,7 +119,7 @@ def _read_subjects_tsv(path: Path) -> dict[str, SubjectRecord]:
                 subject_id = str(row.get("subject_id", "")).strip()
                 if not subject_id:
                     continue
-                out[subject_id] = SubjectRecord(
+                out[_subject_key(subject_id)] = SubjectRecord(
                     subject_id=subject_id,
                     organism=str(row.get("organism", "")).strip(),
                     taxid=str(row.get("taxid", "")).strip(),
@@ -130,7 +137,7 @@ def _read_subjects_tsv(path: Path) -> dict[str, SubjectRecord]:
         subject_id = line.split("\t", 1)[0].strip()
         if subject_id.lower() == "subject_id":
             continue
-        out[subject_id] = SubjectRecord(subject_id=subject_id)
+        out[_subject_key(subject_id)] = SubjectRecord(subject_id=subject_id)
     return out
 
 
@@ -155,7 +162,7 @@ def _read_target_loci_tsv(path: Path) -> dict[str, list[TargetLocus]]:
                 locus_id=str(row.get("locus_id", "")).strip(),
                 gene=str(row.get("gene", "")).strip(),
             )
-            out.setdefault(subject_id, []).append(locus)
+            out.setdefault(_subject_key(subject_id), []).append(locus)
     return out
 
 
@@ -171,6 +178,6 @@ def load_target_catalog(cfg: BlastSpecificityConfig) -> TargetCatalog:
     return TargetCatalog(
         subjects=subjects,
         loci_by_subject=loci_by_subject,
-        legacy_target_subject_ids=frozenset(cfg.target_subject_ids),
+        legacy_target_subject_ids=frozenset(_subject_key(subject_id) for subject_id in cfg.target_subject_ids),
         legacy_target_subject_substrings=tuple(cfg.target_subject_substrings),
     )

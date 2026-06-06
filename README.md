@@ -243,37 +243,29 @@ pytest
 
 ## BLAST specificity database
 
-For production-level specificity checks, use a local curated BLAST DB.
+For production-level specificity checks, use a local curated BLAST DB together with
+`subjects.tsv` and `target_loci.tsv`.
 
 Build:
 
 ```bash
-DB_VERSION="amr_background_v2026_05"
-
-mkdir -p "data/blastdb/${DB_VERSION}/source"
-mkdir -p "data/blastdb/${DB_VERSION}/work"
-
-cat data/blastdb/${DB_VERSION}/source/*.fna \
-  > data/blastdb/${DB_VERSION}/work/subjects.raw.fna
-
-scripts/build_specificity_blastdb.sh "${DB_VERSION}"
+primer-cli blastdb build --config config/examples/vanA.production.yaml
 ```
 
 Run:
 
 ```bash
-primer-cli run \
-  --genes "vanA" \
-  --work-dir ./work/vanA \
-  --output-dir ./out/vanA \
-  --validate-blast \
-  --blast-db ./data/blastdb/amr_background_v2026_05/db/specificity_subjects \
-  --blast-target-subject-substring "target__vanA"
+primer-cli production run --config config/examples/vanA.production.yaml
 ```
 
 Important:
 - `--blast-db` must point to BLAST DB prefix, not to `.fna`.
-- Mark expected on-target hits using `--blast-target-subject-id` and/or `--blast-target-subject-substring`.
+- Production mode is fail-closed and requires both `subjects.tsv` and `target_loci.tsv`.
+- `target_context` FASTA headers should include locus annotations such as
+  `locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA`.
+- Subject substring matching is deprecated and should only be used for exploratory work.
+- Specificity v2 writes `blast_hits.tsv`, `predicted_amplicons.tsv`, `pair_specificity.tsv`,
+  `blast_summary.json`, and `specificity_manifest.json`.
 - Do not commit large BLAST DB binary artifacts to Git.
 
 ## Roadmap

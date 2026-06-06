@@ -43,7 +43,12 @@ def _write_raw_combined_fasta(source_files: list[Path], output_path: Path) -> No
                 out_fh.write("\n")
 
 
-def _write_target_subjects_file(metadata_tsv: Path, output_path: Path) -> None:
+def _write_subjects_file(metadata_tsv: Path, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(metadata_tsv.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _write_target_loci_file(metadata_tsv: Path, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     target_roles = {"target", "target_context"}
     with (
@@ -52,11 +57,27 @@ def _write_target_subjects_file(metadata_tsv: Path, output_path: Path) -> None:
     ):
         reader = csv.DictReader(in_fh, delimiter="\t")
         writer = csv.writer(out_fh, delimiter="\t")
+        writer.writerow(["subject_id", "locus_id", "gene", "start", "end", "strand"])
         for row in reader:
             role = str(row.get("role", "")).strip()
             if role not in target_roles:
                 continue
-            writer.writerow([str(row.get("subject_id", "")).strip(), role])
+
+            start = str(row.get("locus_start", "")).strip()
+            end = str(row.get("locus_end", "")).strip()
+            if not start or not end:
+                continue
+
+            writer.writerow(
+                [
+                    str(row.get("subject_id", "")).strip(),
+                    str(row.get("locus_id", "")).strip(),
+                    str(row.get("gene", "")).strip(),
+                    start,
+                    end,
+                    str(row.get("locus_strand", "")).strip(),
+                ]
+            )
 
 
 def cmd_blastdb_build(args) -> int:
@@ -101,10 +122,15 @@ def cmd_blastdb_build(args) -> int:
     )
     if counts.sequences <= 0:
         raise PrimerCliError("BLAST DB build produced no sequences after FASTA normalization")
-    if cfg.specificity_db.target_subjects_file is not None:
-        _write_target_subjects_file(
+    if cfg.specificity_db.subjects_file is not None:
+        _write_subjects_file(
             paths["metadata_tsv"],
-            cfg.specificity_db.target_subjects_file,
+            cfg.specificity_db.subjects_file,
+        )
+    if cfg.specificity_db.target_loci_file is not None:
+        _write_target_loci_file(
+            paths["metadata_tsv"],
+            cfg.specificity_db.target_loci_file,
         )
     build_blast_database(
         makeblastdb_bin=cfg.tools.makeblastdb_bin,

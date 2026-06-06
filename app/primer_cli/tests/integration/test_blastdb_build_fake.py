@@ -53,7 +53,11 @@ def test_blastdb_build_fake(tmp_path: Path) -> None:
     )
 
     local_fasta = tmp_path / "local.fna"
-    local_fasta.write_text(">x\nACGTACGTACGTACGT\n", encoding="utf-8")
+    local_fasta.write_text(
+        ">x locus_start=3 locus_end=14 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA\n"
+        "ACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
     cfg = tmp_path / "config.yaml"
     cfg.write_text(
         f"""
@@ -87,7 +91,8 @@ specificity_db:
   local_fasta:
     - path: "{local_fasta.as_posix()}"
       role: "target_context"
-  target_subjects_file: "{(tmp_path / 'data' / 'on_target_subjects.tsv').as_posix()}"
+  subjects_file: "{(tmp_path / 'data' / 'subjects.tsv').as_posix()}"
+  target_loci_file: "{(tmp_path / 'data' / 'target_loci.tsv').as_posix()}"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"
@@ -96,16 +101,25 @@ design:
   top_n: 20
 blast_specificity:
   required: true
+  policy_mode: production
   task: "blastn-short"
   word_size: 7
   evalue: 1000
   max_target_seqs: 500
   min_hit_identity: 80
   min_hit_len: 12
+  min_query_coverage: 0.8
+  max_total_mismatches: 4
+  max_total_gaps: 0
   primer_3p_tail_len: 5
   max_3p_tail_mismatches: 1
+  max_3p_tail_gaps: 0
+  require_predicted_on_target_amplicon: true
   reject_any_offtarget_amplicon: true
-  reject_good_3prime_offtarget_hit: true
+  reject_good_3prime_offtarget_amplicon: true
+  pair_pool_size: 50
+  pair_pool_expansion_step: 25
+  top_k_unique_primers: 60
 """.strip(),
         encoding="utf-8",
     )
@@ -115,4 +129,5 @@ blast_specificity:
     assert rc == 0
     manifest = tmp_path / "blastdb" / "vanA_panel.manifest.json"
     assert manifest.exists()
-    assert (tmp_path / "data" / "on_target_subjects.tsv").exists()
+    assert (tmp_path / "data" / "subjects.tsv").exists()
+    assert (tmp_path / "data" / "target_loci.tsv").exists()

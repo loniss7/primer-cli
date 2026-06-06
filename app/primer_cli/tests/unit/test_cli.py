@@ -39,11 +39,27 @@ def test_predict_accepts_blast_target_subject_arguments() -> None:
             "target__vanA",
             "--blast-target-subject-substring",
             "vanA",
+            "--blast-subjects-tsv",
+            "subjects.tsv",
+            "--blast-target-loci-tsv",
+            "target_loci.tsv",
+            "--blast-policy-mode",
+            "production",
+            "--blast-require-predicted-on-target-amplicon",
+            "true",
+            "--blast-reject-any-offtarget-amplicon",
+            "true",
+            "--blast-reject-good-3prime-offtarget-amplicon",
+            "true",
         ]
     )
 
     assert args.blast_target_subject_id == ["target_seq_1", "target_seq_2"]
     assert args.blast_target_subject_substring == ["target__vanA", "vanA"]
+    assert args.blast_subjects_tsv == "subjects.tsv"
+    assert args.blast_target_loci_tsv == "target_loci.tsv"
+    assert args.blast_policy_mode == "production"
+    assert args.blast_require_predicted_on_target_amplicon is True
 
 
 def test_predict_requires_blast_db() -> None:

@@ -14,6 +14,15 @@ from primer_cli import __version__
 Handler = Callable[[argparse.Namespace], int]
 
 
+def _parse_bool_arg(value: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected one of: true, false")
+
+
 def _lazy_handler(module_name: str, func_name: str) -> Handler:
     def _handler(args: argparse.Namespace) -> int:
         module = import_module(module_name)
@@ -190,6 +199,24 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
         help="Minimum hit alignment length to keep BLAST hit",
     )
     sp.add_argument(
+        "--blast-min-query-coverage",
+        type=float,
+        default=0.80,
+        help="Minimum query coverage fraction required for an amplifiable BLAST hit",
+    )
+    sp.add_argument(
+        "--blast-max-total-mismatches",
+        type=int,
+        default=4,
+        help="Maximum total mismatches allowed for an amplifiable BLAST hit",
+    )
+    sp.add_argument(
+        "--blast-max-total-gaps",
+        type=int,
+        default=0,
+        help="Maximum total gap positions allowed for an amplifiable BLAST hit",
+    )
+    sp.add_argument(
         "--blast-primer-3p-tail-len",
         type=int,
         default=5,
@@ -200,6 +227,12 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
         type=int,
         default=1,
         help="Maximum mismatches allowed in primer 3' tail for high-risk off-target hit",
+    )
+    sp.add_argument(
+        "--blast-max-3p-tail-gaps",
+        type=int,
+        default=0,
+        help="Maximum gaps allowed in primer 3' tail for an amplifiable BLAST hit",
     )
     sp.add_argument(
         "--blast-pair-min-amplicon",
@@ -214,21 +247,73 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
         help="Maximum off-target amplicon length to count as risky in BLAST validation",
     )
     sp.add_argument(
+        "--blast-policy-mode",
+        choices=["exploratory", "production"],
+        default="exploratory",
+        help="Specificity policy mode. Production mode is fail-closed.",
+    )
+    sp.add_argument(
+        "--blast-require-predicted-on-target-amplicon",
+        type=_parse_bool_arg,
+        default=True,
+        help="Whether specificity validation requires a locus-aware on-target amplicon prediction",
+    )
+    sp.add_argument(
+        "--blast-reject-any-offtarget-amplicon",
+        type=_parse_bool_arg,
+        default=True,
+        help="Whether any predicted off-target amplicon causes rejection",
+    )
+    sp.add_argument(
+        "--blast-reject-good-3prime-offtarget-amplicon",
+        type=_parse_bool_arg,
+        default=True,
+        help="Whether off-target amplicons with strong 3' support cause rejection",
+    )
+    sp.add_argument(
+        "--blast-pair-pool-size",
+        type=int,
+        default=50,
+        help="Initial number of pre-BLAST-ranked primer pairs to evaluate for specificity",
+    )
+    sp.add_argument(
+        "--blast-pair-pool-expansion-step",
+        type=int,
+        default=25,
+        help="How many additional primer pairs to add when specificity pool expansion is needed",
+    )
+    sp.add_argument(
+        "--blast-top-k-unique-primers",
+        type=int,
+        default=60,
+        help="Initial cap on unique primer sequences to BLAST before pool expansion",
+    )
+    sp.add_argument(
+        "--blast-subjects-tsv",
+        default="",
+        help="Path to subjects.tsv with BLAST subject metadata and roles",
+    )
+    sp.add_argument(
+        "--blast-target-loci-tsv",
+        default="",
+        help="Path to target_loci.tsv with locus-aware on-target coordinates",
+    )
+    sp.add_argument(
         "--blast-target-subject-id",
         action="append",
         default=[],
-        help="BLAST subject ID to treat as expected on-target. Can be repeated.",
+        help="Legacy exact subject ID fallback when subjects.tsv/target_loci.tsv are unavailable.",
     )
     sp.add_argument(
         "--blast-target-subject-substring",
         action="append",
         default=[],
-        help="BLAST subject ID substring to treat as expected on-target. Can be repeated.",
+        help="Deprecated subject substring fallback when locus metadata are unavailable.",
     )
     sp.add_argument(
         "--blast-target-subjects-file",
         default="",
-        help="Optional file with one expected on-target BLAST subject ID per line.",
+        help="Legacy file with one expected on-target BLAST subject ID per line.",
     )
 
 

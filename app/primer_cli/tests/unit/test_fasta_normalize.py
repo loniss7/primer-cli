@@ -9,7 +9,10 @@ from primer_cli.services.blastdb.fasta_normalize import normalize_panel_fasta
 def test_normalize_panel_fasta_creates_stable_lcl_ids(tmp_path: Path) -> None:
     fasta_path = tmp_path / "input.fna"
     fasta_path.write_text(
-        ">a first\nACGTACGTACGT\n>b second\nTTTTAAAACCCC\n",
+        ">a first locus_start=10 locus_end=120 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA\n"
+        "ACGTACGTACGT\n"
+        ">b second locus_start=20 locus_end=140 locus_strand=minus locus_id=vanA_ctx_2 gene=vanA\n"
+        "TTTTAAAACCCC\n",
         encoding="utf-8",
     )
     clean = tmp_path / "clean.fna"
@@ -36,5 +39,9 @@ def test_normalize_panel_fasta_creates_stable_lcl_ids(tmp_path: Path) -> None:
     assert ">lcl|vanA_specificity_panel_000001 organism=Enterococcus_faecium role=target" in text
     assert ">lcl|vanA_specificity_panel_000002 organism=Enterococcus_faecium role=target" in text
     assert counts.sequences == 2
-    assert "lcl|vanA_specificity_panel_000001" in metadata.read_text(encoding="utf-8")
+    metadata_text = metadata.read_text(encoding="utf-8")
+    assert "lcl|vanA_specificity_panel_000001" in metadata_text
+    assert "locus_start" in metadata_text
+    assert "vanA_ctx_1" in metadata_text
+    assert "vanA" in metadata_text
     assert "1352" in taxid.read_text(encoding="utf-8")

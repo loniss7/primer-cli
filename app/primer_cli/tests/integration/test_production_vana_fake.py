@@ -95,7 +95,11 @@ def test_production_vana_fake(tmp_path: Path, monkeypatch) -> None:
     )
 
     local_panel = tmp_path / "local_panel.fna"
-    local_panel.write_text(">ctx\nACGTACGTACGTACGTACGTACGTACGTACGT\n", encoding="utf-8")
+    local_panel.write_text(
+        ">ctx locus_start=5 locus_end=28 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA\n"
+        "ACGTACGTACGTACGTACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
     fetched = tmp_path / "fetched.fna"
     fetched.write_text(
         ">vanA_1\nATGAATAGAATAAAAGTTGCAATACTGTTTTTATCGTGGGCGTTGATAGTCAAGCGGTTTTCATAATGTCGCGTTGTCTTAAACGTTGCAATACTGTTTT\r\n"
@@ -135,7 +139,8 @@ specificity_db:
   local_fasta:
     - path: "{local_panel.as_posix()}"
       role: "target_context"
-  target_subjects_file: "{(tmp_path / 'reports' / 'on_target_subjects.tsv').as_posix()}"
+  subjects_file: "{(tmp_path / 'reports' / 'subjects.tsv').as_posix()}"
+  target_loci_file: "{(tmp_path / 'reports' / 'target_loci.tsv').as_posix()}"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"
@@ -144,16 +149,25 @@ design:
   top_n: 5
 blast_specificity:
   required: true
+  policy_mode: production
   task: "blastn-short"
   word_size: 7
   evalue: 1000
   max_target_seqs: 500
   min_hit_identity: 80
   min_hit_len: 12
+  min_query_coverage: 0.8
+  max_total_mismatches: 4
+  max_total_gaps: 0
   primer_3p_tail_len: 5
   max_3p_tail_mismatches: 1
+  max_3p_tail_gaps: 0
+  require_predicted_on_target_amplicon: true
   reject_any_offtarget_amplicon: true
-  reject_good_3prime_offtarget_hit: true
+  reject_good_3prime_offtarget_amplicon: true
+  pair_pool_size: 50
+  pair_pool_expansion_step: 25
+  top_k_unique_primers: 60
 """.strip(),
         encoding="utf-8",
     )

@@ -28,6 +28,36 @@ def _clean_organism_label(value: str) -> str:
     return clean or "unknown"
 
 
+def _parse_header_attributes(description: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for token in description.split():
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        out[key.strip().lower()] = value.strip()
+    return out
+
+
+def _extract_locus_metadata(description: str, role: str) -> dict[str, str]:
+    if role not in {"target", "target_context"}:
+        return {
+            "locus_start": "",
+            "locus_end": "",
+            "locus_strand": "",
+            "locus_id": "",
+            "gene": "",
+        }
+
+    attrs = _parse_header_attributes(description)
+    return {
+        "locus_start": attrs.get("locus_start", attrs.get("target_start", "")),
+        "locus_end": attrs.get("locus_end", attrs.get("target_end", "")),
+        "locus_strand": attrs.get("locus_strand", attrs.get("strand", "")),
+        "locus_id": attrs.get("locus_id", ""),
+        "gene": attrs.get("gene", ""),
+    }
+
+
 def normalize_panel_fasta(
     *,
     sources: list[FastaInputSource],
@@ -53,7 +83,20 @@ def normalize_panel_fasta(
     ):
         metadata_writer = csv.writer(metadata_fh, delimiter="\t")
         metadata_writer.writerow(
-            ["subject_id", "organism", "taxid", "role", "source", "source_file"]
+            [
+                "subject_id",
+                "organism",
+                "taxid",
+                "role",
+                "source",
+                "source_file",
+                "original_header",
+                "locus_start",
+                "locus_end",
+                "locus_strand",
+                "locus_id",
+                "gene",
+            ]
         )
         taxid_writer = csv.writer(taxid_fh, delimiter="\t")
 
@@ -65,6 +108,7 @@ def normalize_panel_fasta(
                 if not sequence:
                     continue
 
+                locus_meta = _extract_locus_metadata(record.description, source.role)
                 sequence_count += 1
                 base_count += len(sequence)
                 subject_id = f"lcl|{panel_prefix}_{sequence_count:06d}"
@@ -82,6 +126,12 @@ def normalize_panel_fasta(
                         source.role,
                         source.source,
                         str(source.path),
+                        record.description,
+                        locus_meta["locus_start"],
+                        locus_meta["locus_end"],
+                        locus_meta["locus_strand"],
+                        locus_meta["locus_id"],
+                        locus_meta["gene"],
                     ]
                 )
                 if source.taxid is not None:

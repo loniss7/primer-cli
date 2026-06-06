@@ -6,7 +6,14 @@ from typing import Any
 
 import yaml
 
-from primer_cli.core.validation import require_fraction_open01, require_positive_int, validation_error
+from primer_cli.core.validation import (
+    require_choice,
+    require_fraction_closed01,
+    require_fraction_open01,
+    require_non_negative_int,
+    require_positive_int,
+    validation_error,
+)
 
 
 @dataclass(frozen=True)
@@ -57,7 +64,8 @@ class SpecificityDbConfig:
     parse_seqids: bool
     ncbi_datasets: NCBIDatasetsConfig
     local_fasta: tuple[LocalFastaSourceConfig, ...]
-    target_subjects_file: Path | None
+    subjects_file: Path | None
+    target_loci_file: Path | None
 
 
 @dataclass(frozen=True)
@@ -72,16 +80,25 @@ class DesignConfig:
 @dataclass(frozen=True)
 class BlastSpecificityPolicyConfig:
     required: bool
+    policy_mode: str
     task: str
     word_size: int
     evalue: float
     max_target_seqs: int
     min_hit_identity: float
     min_hit_len: int
+    min_query_coverage: float
+    max_total_mismatches: int
+    max_total_gaps: int
     primer_3p_tail_len: int
     max_3p_tail_mismatches: int
+    max_3p_tail_gaps: int
+    require_predicted_on_target_amplicon: bool
     reject_any_offtarget_amplicon: bool
-    reject_good_3prime_offtarget_hit: bool
+    reject_good_3prime_offtarget_amplicon: bool
+    pair_pool_size: int
+    pair_pool_expansion_step: int
+    top_k_unique_primers: int
     pair_min_amplicon: int = 60
     pair_max_amplicon: int = 150
 
@@ -276,13 +293,22 @@ def load_production_config(path: str | Path) -> ProductionConfig:
         parse_seqids=bool(specificity_raw.get("parse_seqids", True)),
         ncbi_datasets=_load_ncbi_datasets(specificity_raw.get("ncbi_datasets")),
         local_fasta=_load_local_fasta(base_dir, specificity_raw.get("local_fasta")),
-        target_subjects_file=(
+        subjects_file=(
             _resolve_path(
                 base_dir,
-                specificity_raw.get("target_subjects_file"),
-                where="specificity_db.target_subjects_file",
+                specificity_raw.get("subjects_file", specificity_raw.get("target_subjects_file")),
+                where="specificity_db.subjects_file",
             )
-            if specificity_raw.get("target_subjects_file")
+            if specificity_raw.get("subjects_file", specificity_raw.get("target_subjects_file"))
+            else None
+        ),
+        target_loci_file=(
+            _resolve_path(
+                base_dir,
+                specificity_raw.get("target_loci_file"),
+                where="specificity_db.target_loci_file",
+            )
+            if specificity_raw.get("target_loci_file")
             else None
         ),
     )
@@ -295,22 +321,40 @@ def load_production_config(path: str | Path) -> ProductionConfig:
     )
     blast_specificity = BlastSpecificityPolicyConfig(
         required=_expect_bool(blast_raw.get("required", True), where="blast_specificity.required"),
+        policy_mode=_expect_string(
+            blast_raw.get("policy_mode", "production"),
+            where="blast_specificity.policy_mode",
+        ),
         task=_expect_string(blast_raw.get("task", "blastn-short"), where="blast_specificity.task"),
         word_size=int(blast_raw.get("word_size", 7)),
         evalue=float(blast_raw.get("evalue", 1000.0)),
         max_target_seqs=int(blast_raw.get("max_target_seqs", 500)),
         min_hit_identity=float(blast_raw.get("min_hit_identity", 80.0)),
         min_hit_len=int(blast_raw.get("min_hit_len", 12)),
+        min_query_coverage=float(blast_raw.get("min_query_coverage", 0.80)),
+        max_total_mismatches=int(blast_raw.get("max_total_mismatches", 4)),
+        max_total_gaps=int(blast_raw.get("max_total_gaps", 0)),
         primer_3p_tail_len=int(blast_raw.get("primer_3p_tail_len", 5)),
         max_3p_tail_mismatches=int(blast_raw.get("max_3p_tail_mismatches", 1)),
+        max_3p_tail_gaps=int(blast_raw.get("max_3p_tail_gaps", 0)),
+        require_predicted_on_target_amplicon=_expect_bool(
+            blast_raw.get("require_predicted_on_target_amplicon", True),
+            where="blast_specificity.require_predicted_on_target_amplicon",
+        ),
         reject_any_offtarget_amplicon=_expect_bool(
             blast_raw.get("reject_any_offtarget_amplicon", True),
             where="blast_specificity.reject_any_offtarget_amplicon",
         ),
-        reject_good_3prime_offtarget_hit=_expect_bool(
-            blast_raw.get("reject_good_3prime_offtarget_hit", True),
-            where="blast_specificity.reject_good_3prime_offtarget_hit",
+        reject_good_3prime_offtarget_amplicon=_expect_bool(
+            blast_raw.get(
+                "reject_good_3prime_offtarget_amplicon",
+                blast_raw.get("reject_good_3prime_offtarget_hit", True),
+            ),
+            where="blast_specificity.reject_good_3prime_offtarget_amplicon",
         ),
+        pair_pool_size=int(blast_raw.get("pair_pool_size", 50)),
+        pair_pool_expansion_step=int(blast_raw.get("pair_pool_expansion_step", 25)),
+        top_k_unique_primers=int(blast_raw.get("top_k_unique_primers", 60)),
         pair_min_amplicon=int(blast_raw.get("pair_min_amplicon", 60)),
         pair_max_amplicon=int(blast_raw.get("pair_max_amplicon", 150)),
     )
@@ -334,15 +378,56 @@ def load_production_config(path: str | Path) -> ProductionConfig:
         where="blast_specificity.max_target_seqs",
         arg_name="max_target_seqs",
     )
+    require_choice(
+        blast_specificity.policy_mode,
+        where="blast_specificity.policy_mode",
+        arg_name="policy_mode",
+        choices={"exploratory", "production"},
+    )
     require_positive_int(
         blast_specificity.min_hit_len,
         where="blast_specificity.min_hit_len",
         arg_name="min_hit_len",
     )
+    require_fraction_closed01(
+        blast_specificity.min_query_coverage,
+        where="blast_specificity.min_query_coverage",
+        arg_name="min_query_coverage",
+    )
+    require_non_negative_int(
+        blast_specificity.max_total_mismatches,
+        where="blast_specificity.max_total_mismatches",
+        arg_name="max_total_mismatches",
+    )
+    require_non_negative_int(
+        blast_specificity.max_total_gaps,
+        where="blast_specificity.max_total_gaps",
+        arg_name="max_total_gaps",
+    )
     require_positive_int(
         blast_specificity.primer_3p_tail_len,
         where="blast_specificity.primer_3p_tail_len",
         arg_name="primer_3p_tail_len",
+    )
+    require_non_negative_int(
+        blast_specificity.max_3p_tail_gaps,
+        where="blast_specificity.max_3p_tail_gaps",
+        arg_name="max_3p_tail_gaps",
+    )
+    require_positive_int(
+        blast_specificity.pair_pool_size,
+        where="blast_specificity.pair_pool_size",
+        arg_name="pair_pool_size",
+    )
+    require_positive_int(
+        blast_specificity.pair_pool_expansion_step,
+        where="blast_specificity.pair_pool_expansion_step",
+        arg_name="pair_pool_expansion_step",
+    )
+    require_positive_int(
+        blast_specificity.top_k_unique_primers,
+        where="blast_specificity.top_k_unique_primers",
+        arg_name="top_k_unique_primers",
     )
     require_positive_int(
         blast_specificity.pair_min_amplicon,
@@ -354,6 +439,19 @@ def load_production_config(path: str | Path) -> ProductionConfig:
         where="blast_specificity.pair_max_amplicon",
         arg_name="pair_max_amplicon",
     )
+    if blast_specificity.policy_mode == "production":
+        if specificity_db.subjects_file is None:
+            raise validation_error(
+                what="specificity_db.subjects_file is required in production mode",
+                where="specificity_db.subjects_file",
+                fix="Configure a subjects.tsv output path for the BLAST DB build.",
+            )
+        if specificity_db.target_loci_file is None:
+            raise validation_error(
+                what="specificity_db.target_loci_file is required in production mode",
+                where="specificity_db.target_loci_file",
+                fix="Configure a target_loci.tsv output path for the BLAST DB build.",
+            )
 
     return ProductionConfig(
         config_path=config_path,

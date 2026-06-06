@@ -121,20 +121,49 @@ def _run_predict_stage(
         str(cfg.blast_specificity.min_hit_identity),
         "--blast-min-hit-len",
         str(cfg.blast_specificity.min_hit_len),
+        "--blast-min-query-coverage",
+        str(cfg.blast_specificity.min_query_coverage),
+        "--blast-max-total-mismatches",
+        str(cfg.blast_specificity.max_total_mismatches),
+        "--blast-max-total-gaps",
+        str(cfg.blast_specificity.max_total_gaps),
         "--blast-primer-3p-tail-len",
         str(cfg.blast_specificity.primer_3p_tail_len),
         "--blast-max-3p-tail-mismatches",
         str(cfg.blast_specificity.max_3p_tail_mismatches),
+        "--blast-max-3p-tail-gaps",
+        str(cfg.blast_specificity.max_3p_tail_gaps),
         "--blast-pair-min-amplicon",
         str(cfg.blast_specificity.pair_min_amplicon),
         "--blast-pair-max-amplicon",
         str(cfg.blast_specificity.pair_max_amplicon),
+        "--blast-policy-mode",
+        cfg.blast_specificity.policy_mode,
+        "--blast-require-predicted-on-target-amplicon",
+        str(cfg.blast_specificity.require_predicted_on_target_amplicon).lower(),
+        "--blast-reject-any-offtarget-amplicon",
+        str(cfg.blast_specificity.reject_any_offtarget_amplicon).lower(),
+        "--blast-reject-good-3prime-offtarget-amplicon",
+        str(cfg.blast_specificity.reject_good_3prime_offtarget_amplicon).lower(),
+        "--blast-pair-pool-size",
+        str(cfg.blast_specificity.pair_pool_size),
+        "--blast-pair-pool-expansion-step",
+        str(cfg.blast_specificity.pair_pool_expansion_step),
+        "--blast-top-k-unique-primers",
+        str(cfg.blast_specificity.top_k_unique_primers),
     ]
-    if cfg.specificity_db.target_subjects_file is not None:
+    if cfg.specificity_db.subjects_file is not None:
         argv.extend(
             [
-                "--blast-target-subjects-file",
-                str(cfg.specificity_db.target_subjects_file),
+                "--blast-subjects-tsv",
+                str(cfg.specificity_db.subjects_file),
+            ]
+        )
+    if cfg.specificity_db.target_loci_file is not None:
+        argv.extend(
+            [
+                "--blast-target-loci-tsv",
+                str(cfg.specificity_db.target_loci_file),
             ]
         )
 
@@ -147,6 +176,8 @@ def cmd_production_run(args) -> int:
     cfg = load_production_config(args.config)
     if not cfg.blast_specificity.required:
         raise PrimerCliError("production run requires blast_specificity.required=true")
+    if cfg.blast_specificity.policy_mode != "production":
+        raise PrimerCliError("production run requires blast_specificity.policy_mode=production")
 
     cfg.runtime.work_dir.mkdir(parents=True, exist_ok=True)
     cfg.runtime.output_dir.mkdir(parents=True, exist_ok=True)

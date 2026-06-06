@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
+from primer_cli.cli.commands import pipeline
 from primer_cli.services.specificity.amplicon_finder import predict_amplicon
+from primer_cli.services.specificity.blast_runner import BlastRunner
 from primer_cli.services.specificity.hit_parser import parse_blast_line
 from primer_cli.services.specificity.models import (
     BlastSpecificityConfig,
     PredictedAmplicon,
+    PrimerPairSpecificityMetrics,
     PrimerBlastHit,
 )
 from primer_cli.services.specificity.policy import evaluate_pair_policy
@@ -285,3 +289,91 @@ def test_policy_returns_unresolved_when_on_target_amplicon_cannot_be_resolved() 
 
     assert decision.status == "UNRESOLVED"
     assert decision.reason == "on_target_amplicon_not_resolved"
+
+
+def test_blast_runner_caches_hits_by_sequence(monkeypatch) -> None:
+    cfg = BlastSpecificityConfig(blast_db="dummy_db")
+    runner = BlastRunner(cfg)
+    seen_batches: list[list[str]] = []
+
+    def _fake_run_batch(sequences: list[str]) -> dict[str, list[PrimerBlastHit]]:
+        seen_batches.append(list(sequences))
+        return {sequence: [] for sequence in sequences}
+
+    monkeypatch.setattr(runner, "_run_batch", _fake_run_batch)
+
+    runner.blast_sequences(["AAAA", "TTTT"])
+    runner.blast_sequences(["AAAA", "CCCC"])
+
+    assert seen_batches == [["AAAA", "TTTT"], ["CCCC"]]
+    assert runner.cache_hits == 1
+    assert runner.cache_misses == 3
+
+
+def test_specificity_pool_expansion_adds_more_pairs_until_top_n_passes() -> None:
+    ordered_pairs = [
+        SimpleNamespace(forward_seq="AAAA", reverse_seq="TTTT"),
+        SimpleNamespace(forward_seq="AAAA", reverse_seq="GGGG"),
+        SimpleNamespace(forward_seq="CCCC", reverse_seq="GGGG"),
+    ]
+    cfg = BlastSpecificityConfig(
+        blast_db="dummy_db",
+        pair_pool_size=1,
+        pair_pool_expansion_step=1,
+        top_k_unique_primers=2,
+    )
+
+    class _FakeSpecificityService:
+        def __init__(self) -> None:
+            self.requested_batches: list[list[str]] = []
+            self.cache: set[str] = set()
+
+        def blast_sequences(self, sequences: list[str]) -> dict[str, list]:
+            new_sequences = [sequence for sequence in sequences if sequence not in self.cache]
+            self.requested_batches.append(new_sequences)
+            self.cache.update(sequences)
+            return {sequence: [] for sequence in sequences}
+
+        def evaluate_pairs(self, pairs: list, hits_by_sequence: dict[str, list]) -> tuple[list, list]:
+            metrics: list[PrimerPairSpecificityMetrics] = []
+            for pair in pairs:
+                pair_key = (pair.forward_seq, pair.reverse_seq)
+                if pair_key == ("AAAA", "TTTT"):
+                    metrics.append(
+                        PrimerPairSpecificityMetrics(
+                            forward_seq="AAAA",
+                            reverse_seq="TTTT",
+                            potential_off_target_amplicons_count=1,
+                            good_3prime_off_target_amplicons_count=1,
+                            off_target_pair_risk_score=9.0,
+                            status="REJECTED",
+                            decision_reason="good_3prime_offtarget_amplicon_detected",
+                        )
+                    )
+                else:
+                    metrics.append(
+                        PrimerPairSpecificityMetrics(
+                            forward_seq=str(pair.forward_seq),
+                            reverse_seq=str(pair.reverse_seq),
+                            potential_off_target_amplicons_count=0,
+                            good_3prime_off_target_amplicons_count=0,
+                            off_target_pair_risk_score=0.0,
+                            status="PASSED",
+                            decision_reason="passed",
+                        )
+                    )
+            return metrics, []
+
+    fake_service = _FakeSpecificityService()
+    result = pipeline._run_specificity_pool_expansion(
+        ordered_pairs=ordered_pairs,
+        top_n=2,
+        blast_cfg=cfg,
+        specificity_service=fake_service,
+    )
+
+    assert result.initial_pool_size == 1
+    assert result.pool_expansions == 2
+    assert len(result.evaluated_pairs) == 3
+    assert len(result.validated_pairs) == 2
+    assert fake_service.requested_batches == [["AAAA", "TTTT"], ["GGGG"], ["CCCC"]]

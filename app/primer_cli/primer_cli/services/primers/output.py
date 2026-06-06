@@ -66,10 +66,16 @@ def _format_offtarget_summary(spec: PrimerPairSpecificityMetrics | None) -> str:
     if spec is None:
         raise PrimerCliError("Final output requires BLAST specificity metrics for every primer pair")
     return (
+        f"status={spec.status}; "
+        f"reason={spec.decision_reason}; "
         "offtarget_amplicons="
         f"{spec.potential_off_target_amplicons_count}; "
         "offtarget_amplicons_good3p="
         f"{spec.good_3prime_off_target_amplicons_count}; "
+        "on_target_amplicons="
+        f"{spec.predicted_on_target_amplicons_count}; "
+        "unresolved_amplicons="
+        f"{spec.unresolved_amplicons_count}; "
         f"offtarget_risk={spec.off_target_pair_risk_score:.3f}"
     )
 
@@ -136,7 +142,7 @@ def build_top_primer_pair_results(
                 forward_homodimer_tm=(f_met.homodimer_tm if f_met is not None else float("nan")),
                 reverse_homodimer_tm=(r_met.homodimer_tm if r_met is not None else float("nan")),
                 heterodimer_tm=pair_cov.heterodimer_tm,
-                blast_status="passed",
+                blast_status=pair_spec.status,
                 blast_db=config.blast_db,
                 blast_task=config.blast_task,
                 offtarget_amplicons_count=pair_spec.potential_off_target_amplicons_count,

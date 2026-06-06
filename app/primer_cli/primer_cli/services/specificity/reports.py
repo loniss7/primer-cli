@@ -7,6 +7,7 @@ from pathlib import Path
 
 from primer_cli.services.specificity.models import (
     PredictedAmplicon,
+    PrimerBlastHit,
     PrimerPairSpecificityMetrics,
     SpecificityManifest,
 )
@@ -25,6 +26,20 @@ def _write_tsv_rows(rows: list[dict[str, object]], path: Path) -> None:
 
 def write_predicted_amplicons_tsv(rows: list[PredictedAmplicon], path: str | Path) -> None:
     _write_tsv_rows([asdict(row) for row in rows], Path(path))
+
+
+def write_blast_hits_tsv(
+    hits_by_sequence: dict[str, list[PrimerBlastHit]],
+    path: str | Path,
+) -> int:
+    rows: list[dict[str, object]] = []
+    for sequence, hits in sorted(hits_by_sequence.items()):
+        for hit in hits:
+            row = asdict(hit)
+            row["query_sequence"] = sequence
+            rows.append(row)
+    _write_tsv_rows(rows, Path(path))
+    return len(rows)
 
 
 def write_pair_specificity_tsv(rows: list[PrimerPairSpecificityMetrics], path: str | Path) -> None:

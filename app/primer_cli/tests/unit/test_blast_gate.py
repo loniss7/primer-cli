@@ -21,26 +21,44 @@ def test_apply_blast_gate_rejects_pair_with_offtarget_amplicon() -> None:
         potential_off_target_amplicons_count=1,
         good_3prime_off_target_amplicons_count=0,
         off_target_pair_risk_score=1.0,
+        status="REJECTED",
+        decision_reason="offtarget_amplicon_detected",
     )
 
-    validated, rejected = pipeline._apply_blast_gate(
+    validated = pipeline._filter_pairs_by_specificity_status(
         [pair],
         {("AAAA", "TTTT"): spec},
     )
 
     assert validated == []
-    assert len(rejected) == 1
-    assert rejected[0].reject_reason == "offtarget_amplicon_detected"
 
 
 def test_apply_blast_gate_rejects_pair_without_specificity_metrics() -> None:
     pair = SimpleNamespace(forward_seq="AAAA", reverse_seq="TTTT")
 
-    validated, rejected = pipeline._apply_blast_gate([pair], {})
+    validated = pipeline._filter_pairs_by_specificity_status([pair], {})
 
     assert validated == []
-    assert len(rejected) == 1
-    assert rejected[0].reject_reason == "missing_specificity_metrics"
+
+
+def test_filter_pairs_by_specificity_status_keeps_warning_status() -> None:
+    pair = SimpleNamespace(forward_seq="AAAA", reverse_seq="TTTT")
+    spec = PrimerPairSpecificityMetrics(
+        forward_seq="AAAA",
+        reverse_seq="TTTT",
+        potential_off_target_amplicons_count=0,
+        good_3prime_off_target_amplicons_count=0,
+        off_target_pair_risk_score=0.0,
+        status="PASSED_WITH_WARNINGS",
+        decision_reason="offtarget_binding_without_amplicon",
+    )
+
+    validated = pipeline._filter_pairs_by_specificity_status(
+        [pair],
+        {("AAAA", "TTTT"): spec},
+    )
+
+    assert validated == [pair]
 
 
 def test_final_output_rejects_missing_specificity_metrics() -> None:

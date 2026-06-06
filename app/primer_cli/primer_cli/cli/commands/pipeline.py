@@ -1,9 +1,8 @@
 # src/primer_cli/cli/commands/pipeline.py
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
-import csv
-import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,14 +49,15 @@ class PipelinePaths:
 
 
 @dataclass(frozen=True)
-class BlastRejectedPair:
-    forward_sequence: str
-    reverse_sequence: str
-    blast_status: str
-    reject_reason: str
-    offtarget_amplicons_count: int
-    good_3prime_offtarget_amplicons_count: int
-    offtarget_pair_risk_score: float
+class SpecificityPoolResult:
+    evaluated_pairs: list
+    validated_pairs: list
+    hits_by_sequence: dict[str, list]
+    pair_specificity: list
+    pair_specificity_by_key: dict[tuple[str, str], object]
+    predicted_amplicons: list
+    initial_pool_size: int
+    pool_expansions: int
 
 
 def _parse_gene_names(raw_value: str) -> list[str]:
@@ -167,133 +167,159 @@ def _reports_dir(paths: PipelinePaths) -> Path:
     return paths.outdir / "reports"
 
 
-def _write_rejected_pairs_csv(rows: list[BlastRejectedPair], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(BlastRejectedPair.__dataclass_fields__.keys())
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row.__dict__)
+def _pair_key(forward_seq: str, reverse_seq: str) -> tuple[str, str]:
+    return (forward_seq.upper(), reverse_seq.upper())
 
 
-def _write_blast_hits_tsv(hits_by_sequence: dict[str, list], path: Path) -> int:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "query_sequence",
-        "query_id",
-        "subject_id",
-        "sstrand",
-        "pident",
-        "align_len",
-        "mismatch",
-        "gaps",
-        "qstart",
-        "qend",
-        "sstart",
-        "send",
-        "evalue",
-        "bitscore",
-        "qlen",
-        "qseq_aln",
-        "sseq_aln",
-        "is_off_target",
-        "has_good_3prime_match",
-    ]
-    rows_written = 0
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
-        writer.writeheader()
-        for sequence, hits in sorted(hits_by_sequence.items()):
-            for hit in hits:
-                rows_written += 1
-                writer.writerow(
-                    {
-                        "query_sequence": sequence,
-                        "query_id": hit.query_id,
-                        "subject_id": hit.subject_id,
-                        "sstrand": hit.sstrand,
-                        "pident": hit.pident,
-                        "align_len": hit.align_len,
-                        "mismatch": hit.mismatch,
-                        "gaps": hit.gaps,
-                        "qstart": hit.qstart,
-                        "qend": hit.qend,
-                        "sstart": hit.sstart,
-                        "send": hit.send,
-                        "evalue": hit.evalue,
-                        "bitscore": hit.bitscore,
-                        "qlen": hit.qlen,
-                        "qseq_aln": hit.qseq_aln,
-                        "sseq_aln": hit.sseq_aln,
-                        "is_off_target": hit.is_off_target,
-                        "has_good_3prime_match": hit.has_good_3prime_match,
-                    }
-                )
-    return rows_written
+def _unique_sequences_from_pairs(pairs: list) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for pair in pairs:
+        for sequence in (str(pair.forward_seq).upper(), str(pair.reverse_seq).upper()):
+            if sequence in seen:
+                continue
+            seen.add(sequence)
+            unique.append(sequence)
+    return unique
 
 
-def _write_blast_summary_json(summary: dict, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+def _build_diverse_pair_order(scored_pairs, pair_cov_by_key: dict[tuple[str, str], object]) -> list:
+    remaining = list(scored_pairs)
+    selected = []
+    forward_reuse: Counter[str] = Counter()
+    reverse_reuse: Counter[str] = Counter()
+
+    while remaining:
+        best_index = 0
+        best_adjusted_score: float | None = None
+        for idx, scored in enumerate(remaining):
+            forward_seq = scored.forward_seq.upper()
+            reverse_seq = scored.reverse_seq.upper()
+            reuse_penalty = 1.5 * float(forward_reuse[forward_seq] + reverse_reuse[reverse_seq])
+            adjusted_score = float(scored.final_score) - reuse_penalty
+            if best_adjusted_score is None or adjusted_score > best_adjusted_score:
+                best_adjusted_score = adjusted_score
+                best_index = idx
+
+        best = remaining.pop(best_index)
+        forward_reuse[best.forward_seq.upper()] += 1
+        reverse_reuse[best.reverse_seq.upper()] += 1
+        selected.append(pair_cov_by_key[_pair_key(best.forward_seq, best.reverse_seq)])
+
+    return selected
 
 
-def _apply_blast_gate(
-    pair_cov,
-    pair_specificity_by_key,
-) -> tuple[list, list[BlastRejectedPair]]:
+def _take_initial_blast_pool(ordered_pairs: list, *, max_pairs: int, max_unique_primers: int) -> tuple[list, int]:
+    pool: list = []
+    unique_sequences: set[str] = set()
+    cursor = 0
+
+    while cursor < len(ordered_pairs) and len(pool) < max_pairs:
+        candidate = ordered_pairs[cursor]
+        candidate_sequences = {
+            str(candidate.forward_seq).upper(),
+            str(candidate.reverse_seq).upper(),
+        }
+        next_unique_count = len(unique_sequences | candidate_sequences)
+        if pool and next_unique_count > max_unique_primers:
+            break
+        pool.append(candidate)
+        unique_sequences.update(candidate_sequences)
+        cursor += 1
+
+    return pool, cursor
+
+
+def _take_pool_expansion_batch(ordered_pairs: list, cursor: int, step: int) -> tuple[list, int]:
+    next_cursor = min(len(ordered_pairs), cursor + step)
+    return ordered_pairs[cursor:next_cursor], next_cursor
+
+
+def _filter_pairs_by_specificity_status(pair_cov: list, pair_specificity_by_key: dict[tuple[str, str], object]) -> list:
     validated_pairs = []
-    rejected_pairs: list[BlastRejectedPair] = []
-
     for pair in pair_cov:
-        pair_key = (pair.forward_seq.upper(), pair.reverse_seq.upper())
-        spec = pair_specificity_by_key.get(pair_key)
+        spec = pair_specificity_by_key.get(_pair_key(pair.forward_seq, pair.reverse_seq))
         if spec is None:
-            rejected_pairs.append(
-                BlastRejectedPair(
-                    forward_sequence=pair.forward_seq.upper(),
-                    reverse_sequence=pair.reverse_seq.upper(),
-                    blast_status="rejected",
-                    reject_reason="missing_specificity_metrics",
-                    offtarget_amplicons_count=0,
-                    good_3prime_offtarget_amplicons_count=0,
-                    offtarget_pair_risk_score=0.0,
-                )
-            )
             continue
-        if spec.good_3prime_off_target_amplicons_count > 0:
-            rejected_pairs.append(
-                BlastRejectedPair(
-                    forward_sequence=pair.forward_seq.upper(),
-                    reverse_sequence=pair.reverse_seq.upper(),
-                    blast_status="rejected",
-                    reject_reason="good_3prime_offtarget_amplicon_detected",
-                    offtarget_amplicons_count=spec.potential_off_target_amplicons_count,
-                    good_3prime_offtarget_amplicons_count=(
-                        spec.good_3prime_off_target_amplicons_count
-                    ),
-                    offtarget_pair_risk_score=spec.off_target_pair_risk_score,
-                )
-            )
-            continue
-        if spec.potential_off_target_amplicons_count > 0:
-            rejected_pairs.append(
-                BlastRejectedPair(
-                    forward_sequence=pair.forward_seq.upper(),
-                    reverse_sequence=pair.reverse_seq.upper(),
-                    blast_status="rejected",
-                    reject_reason="offtarget_amplicon_detected",
-                    offtarget_amplicons_count=spec.potential_off_target_amplicons_count,
-                    good_3prime_offtarget_amplicons_count=(
-                        spec.good_3prime_off_target_amplicons_count
-                    ),
-                    offtarget_pair_risk_score=spec.off_target_pair_risk_score,
-                )
-            )
-            continue
-        validated_pairs.append(pair)
+        if spec.status in {"PASSED", "PASSED_WITH_WARNINGS"}:
+            validated_pairs.append(pair)
+    return validated_pairs
 
-    return validated_pairs, rejected_pairs
+
+def _run_specificity_pool_expansion(
+    *,
+    ordered_pairs: list,
+    top_n: int,
+    blast_cfg,
+    specificity_service,
+) -> SpecificityPoolResult:
+    current_batch, cursor = _take_initial_blast_pool(
+        ordered_pairs,
+        max_pairs=blast_cfg.pair_pool_size,
+        max_unique_primers=blast_cfg.top_k_unique_primers,
+    )
+    if not current_batch:
+        raise PrimerCliError(
+            "BLAST specificity validation could not seed an initial candidate pool"
+        )
+
+    initial_pool_size = len(current_batch)
+    evaluated_pairs: list = []
+    hits_by_sequence: dict[str, list] = {}
+    predicted_amplicons: list = []
+    pair_specificity_by_key: dict[tuple[str, str], object] = {}
+    pool_expansions = 0
+
+    while current_batch:
+        evaluated_pairs.extend(current_batch)
+        hits_by_sequence.update(
+            specificity_service.blast_sequences(_unique_sequences_from_pairs(current_batch))
+        )
+        batch_metrics, batch_amplicons = specificity_service.evaluate_pairs(
+            current_batch,
+            hits_by_sequence,
+        )
+        predicted_amplicons.extend(batch_amplicons)
+        for metric in batch_metrics:
+            pair_specificity_by_key[_pair_key(metric.forward_seq, metric.reverse_seq)] = metric
+
+        validated_pairs = _filter_pairs_by_specificity_status(
+            evaluated_pairs,
+            pair_specificity_by_key,
+        )
+        if len(validated_pairs) >= top_n:
+            break
+        if cursor >= len(ordered_pairs):
+            break
+
+        current_batch, cursor = _take_pool_expansion_batch(
+            ordered_pairs,
+            cursor,
+            blast_cfg.pair_pool_expansion_step,
+        )
+        if current_batch:
+            pool_expansions += 1
+
+    pair_specificity = [
+        pair_specificity_by_key[_pair_key(pair.forward_seq, pair.reverse_seq)]
+        for pair in evaluated_pairs
+        if _pair_key(pair.forward_seq, pair.reverse_seq) in pair_specificity_by_key
+    ]
+    validated_pairs = _filter_pairs_by_specificity_status(
+        evaluated_pairs,
+        pair_specificity_by_key,
+    )
+
+    return SpecificityPoolResult(
+        evaluated_pairs=evaluated_pairs,
+        validated_pairs=validated_pairs,
+        hits_by_sequence=hits_by_sequence,
+        pair_specificity=pair_specificity,
+        pair_specificity_by_key=pair_specificity_by_key,
+        predicted_amplicons=predicted_amplicons,
+        initial_pool_size=initial_pool_size,
+        pool_expansions=pool_expansions,
+    )
 
 
 def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path) -> int:
@@ -364,11 +390,6 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
 
 
 def _run_primers_stage(paths: PipelinePaths, args) -> None:
-    from primer_cli.services.primers.blast_specificity import (
-        evaluate_pair_offtarget_specificity,
-        evaluate_single_primer_specificity,
-        preflight_blast_specificity,
-    )
     from primer_cli.services.primers.data_prep import load_and_prepare_primer_inputs
     from primer_cli.services.primers.final_scoring import score_primer_pairs
     from primer_cli.services.primers.msa_coverage import (
@@ -399,6 +420,15 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     from primer_cli.services.primers.window_candidates import (
         SinglePrimerWindowConfig,
         generate_single_primer_window_candidates,
+    )
+    from primer_cli.services.specificity import BlastSpecificityService
+    from primer_cli.services.specificity.models import SpecificityManifest
+    from primer_cli.services.specificity.reports import (
+        write_blast_hits_tsv,
+        write_blast_summary_json,
+        write_pair_specificity_tsv,
+        write_predicted_amplicons_tsv,
+        write_specificity_manifest_json,
     )
 
     if len(args.primer_unsuitable_char) != 1:
@@ -516,45 +546,86 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
 
     single_metrics_by_seq = {m.sequence.upper(): m for m in filtered}
     single_cov_by_seq = {m.sequence.upper(): m for m in single_cov}
-    pair_cov_by_key = {(p.forward_seq.upper(), p.reverse_seq.upper()): p for p in pair_cov}
+    pair_cov_by_key = {_pair_key(p.forward_seq, p.reverse_seq): p for p in pair_cov}
+    pre_scored = score_primer_pairs(
+        pair_cov,
+        single_primer_metrics_by_seq=single_metrics_by_seq,
+    )
+    if not pre_scored:
+        raise PrimerCliError("Primers stage: no primer pairs available for pre-BLAST scoring")
+
+    ordered_pairs = _build_diverse_pair_order(pre_scored, pair_cov_by_key)
     blast_db = _require_blast_db_arg(args)
     blast_cfg = _build_blast_specificity_cfg(args, blast_db=blast_db)
-    preflight = preflight_blast_specificity(blast_cfg)
-    _, hits_by_sequence = evaluate_single_primer_specificity(filtered, blast_cfg)
-    pair_specificity = evaluate_pair_offtarget_specificity(pair_cov, hits_by_sequence, blast_cfg)
-    pair_specificity_by_key = {
-        (m.forward_seq.upper(), m.reverse_seq.upper()): m for m in pair_specificity
-    }
-    validated_pair_cov, rejected_pairs = _apply_blast_gate(pair_cov, pair_specificity_by_key)
+    specificity_service = BlastSpecificityService(blast_cfg)
+    preflight = specificity_service.preflight()
+    specificity_result = _run_specificity_pool_expansion(
+        ordered_pairs=ordered_pairs,
+        top_n=int(args.top_n),
+        blast_cfg=blast_cfg,
+        specificity_service=specificity_service,
+    )
 
     reports_dir = _reports_dir(paths)
     blast_hits_path = reports_dir / "blast_hits.tsv"
-    rejected_pairs_path = reports_dir / "rejected_pairs.csv"
+    predicted_amplicons_path = reports_dir / "predicted_amplicons.tsv"
+    pair_specificity_path = reports_dir / "pair_specificity.tsv"
     blast_summary_path = reports_dir / "blast_summary.json"
-    blast_hits_count = _write_blast_hits_tsv(hits_by_sequence, blast_hits_path)
-    _write_rejected_pairs_csv(rejected_pairs, rejected_pairs_path)
-    _write_blast_summary_json(
+    blast_manifest_path = reports_dir / "specificity_manifest.json"
+    blast_hits_count = write_blast_hits_tsv(specificity_result.hits_by_sequence, blast_hits_path)
+    write_predicted_amplicons_tsv(
+        specificity_result.predicted_amplicons,
+        predicted_amplicons_path,
+    )
+    write_pair_specificity_tsv(specificity_result.pair_specificity, pair_specificity_path)
+    write_blast_summary_json(
         {
             "blast_db": blast_db,
             "blast_task": blast_cfg.task,
             "blastn_version": preflight.blastn_version,
-            "pair_count_before_gate": len(pair_cov),
-            "pair_count_after_gate": len(validated_pair_cov),
-            "rejected_pair_count": len(rejected_pairs),
-            "unique_primer_sequences_blasted": len(hits_by_sequence),
+            "pair_count_pre_blast": len(pair_cov),
+            "pair_count_evaluated_by_specificity": len(specificity_result.evaluated_pairs),
+            "pair_count_after_policy": len(specificity_result.validated_pairs),
+            "rejected_pair_count": sum(
+                1
+                for metric in specificity_result.pair_specificity
+                if metric.status not in {"PASSED", "PASSED_WITH_WARNINGS"}
+            ),
+            "unresolved_pair_count": sum(
+                1 for metric in specificity_result.pair_specificity if metric.status == "UNRESOLVED"
+            ),
+            "initial_candidate_pool_size": specificity_result.initial_pool_size,
+            "pool_expansions": specificity_result.pool_expansions,
+            "unique_primer_sequences_blasted": len(specificity_result.hits_by_sequence),
             "blast_hit_count": blast_hits_count,
             "blast_db_info": preflight.blastdb_info,
         },
         blast_summary_path,
     )
+    write_specificity_manifest_json(
+        SpecificityManifest(
+            blast_db=blast_db,
+            blast_task=blast_cfg.task,
+            policy_mode=blast_cfg.policy_mode,
+            subjects_tsv=blast_cfg.subjects_tsv,
+            target_loci_tsv=blast_cfg.target_loci_tsv,
+            unique_sequences_requested=len(
+                _unique_sequences_from_pairs(specificity_result.evaluated_pairs)
+            ),
+            unique_sequences_blasted=len(specificity_result.hits_by_sequence),
+            cache_hits=specificity_service.runner.cache_hits,
+            cache_misses=specificity_service.runner.cache_misses,
+        ),
+        blast_manifest_path,
+    )
 
-    if not validated_pair_cov:
+    if not specificity_result.validated_pairs:
         raise PrimerCliError("BLAST specificity validation rejected all primer pairs")
 
     scored = score_primer_pairs(
-        validated_pair_cov,
+        specificity_result.validated_pairs,
         single_primer_metrics_by_seq=single_metrics_by_seq,
-        pair_specificity_by_key=pair_specificity_by_key,
+        pair_specificity_by_key=specificity_result.pair_specificity_by_key,
     )
     if not scored:
         raise PrimerCliError("Primers stage: no primer pairs left for final scoring")
@@ -564,7 +635,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
         pair_coverage_by_key=pair_cov_by_key,
         single_coverage_by_seq=single_cov_by_seq,
         single_metrics_by_seq=single_metrics_by_seq,
-        pair_specificity_by_key=pair_specificity_by_key,
+        pair_specificity_by_key=specificity_result.pair_specificity_by_key,
         cfg=FinalOutputConfig(
             top_n=int(args.top_n),
             blast_db=blast_db,
@@ -677,10 +748,29 @@ def _build_blast_specificity_cfg(args, *, blast_db: str):
         max_target_seqs=int(getattr(args, "blast_max_target_seqs", 500)),
         min_hit_identity=float(getattr(args, "blast_min_hit_identity", 80.0)),
         min_hit_len=int(getattr(args, "blast_min_hit_len", 12)),
+        min_query_coverage=float(getattr(args, "blast_min_query_coverage", 0.80)),
+        max_total_mismatches=int(getattr(args, "blast_max_total_mismatches", 4)),
+        max_total_gaps=int(getattr(args, "blast_max_total_gaps", 0)),
         primer_3p_tail_len=int(getattr(args, "blast_primer_3p_tail_len", 5)),
         max_3p_tail_mismatches=int(getattr(args, "blast_max_3p_tail_mismatches", 1)),
+        max_3p_tail_gaps=int(getattr(args, "blast_max_3p_tail_gaps", 0)),
         pair_min_amplicon=int(getattr(args, "blast_pair_min_amplicon", 60)),
         pair_max_amplicon=int(getattr(args, "blast_pair_max_amplicon", 150)),
+        subjects_tsv=str(getattr(args, "blast_subjects_tsv", "")).strip(),
+        target_loci_tsv=str(getattr(args, "blast_target_loci_tsv", "")).strip(),
         target_subject_ids=tuple(target_subject_ids),
         target_subject_substrings=tuple(getattr(args, "blast_target_subject_substring", []) or []),
+        policy_mode=str(getattr(args, "blast_policy_mode", "exploratory")),
+        require_predicted_on_target_amplicon=bool(
+            getattr(args, "blast_require_predicted_on_target_amplicon", True)
+        ),
+        reject_any_offtarget_amplicon=bool(
+            getattr(args, "blast_reject_any_offtarget_amplicon", True)
+        ),
+        reject_good_3prime_offtarget_amplicon=bool(
+            getattr(args, "blast_reject_good_3prime_offtarget_amplicon", True)
+        ),
+        pair_pool_size=int(getattr(args, "blast_pair_pool_size", 50)),
+        pair_pool_expansion_step=int(getattr(args, "blast_pair_pool_expansion_step", 25)),
+        top_k_unique_primers=int(getattr(args, "blast_top_k_unique_primers", 60)),
     )

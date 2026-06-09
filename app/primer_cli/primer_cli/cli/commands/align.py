@@ -1,12 +1,14 @@
 # src/primer_cli/cli/commands/align.py
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-import sys
 import time
 
 from primer_cli.core.validation import require_file_exists, require_not_directory, validation_error
 from primer_cli.services.aligners.mafft import MafftAligner
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_align(args) -> int:
@@ -21,10 +23,12 @@ def cmd_align(args) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     aligner = MafftAligner(binary=mafft_bin)
-    print(
-        f"Starting alignment with MAFFT: {in_path} -> {out_path}",
-        file=sys.stderr,
-        flush=True,
+    logger.info(
+        "Starting alignment with MAFFT: input=%s output=%s binary=%s args=%s",
+        in_path,
+        out_path,
+        mafft_bin,
+        args.mafft_args,
     )
     t0 = time.monotonic()
     aligner.align_fasta(
@@ -33,6 +37,6 @@ def cmd_align(args) -> int:
         extra_args=args.mafft_args,
     )
     dt = time.monotonic() - t0
-    print(f"Alignment completed in {dt:.1f}s", file=sys.stderr, flush=True)
+    logger.info("Alignment completed in %.1fs: %s", dt, out_path)
 
     return 0

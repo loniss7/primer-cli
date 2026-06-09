@@ -129,6 +129,21 @@ primer-cli blastdb info --db blastdb/gene_specificity_panel
 
 You can also run the lower-level commands `fetch`, `align`, `conserved`, `predict`, and `run`.
 
+## Logging
+
+The CLI now writes detailed stage and error logs.
+
+- Any command can write to an explicit file with `--log-file path/to/run.log`.
+- `run` and `predict` automatically create timestamped logs in `OUTPUT_DIR/logs/`.
+- `production run` and `blastdb build` automatically create timestamped logs in `reports_dir/logs/`.
+- Unexpected errors and handled `PrimerCliError` failures are logged with traceback, so you can see exactly which stage failed.
+
+Example:
+
+```bash
+primer-cli production run --config config/examples/gene.production.yaml --log-level DEBUG
+```
+
 ## Production Workflow Example
 
 The production config is `config/examples/gene.production.yaml`. That file shows the full pattern for a real target gene:

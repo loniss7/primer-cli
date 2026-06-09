@@ -3,15 +3,17 @@ from __future__ import annotations
 
 import argparse
 from importlib import import_module
+import logging
 import sys
 from typing import Callable, Optional
 
 from primer_cli.core.exceptions import PrimerCliError
-from primer_cli.core.logging import configure_logging
+from primer_cli.core.logging import configure_logging, get_active_log_file
 from primer_cli import __version__
 
 
 Handler = Callable[[argparse.Namespace], int]
+logger = logging.getLogger(__name__)
 
 
 def _parse_bool_arg(value: str) -> bool:
@@ -38,6 +40,11 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity",
+    )
+    p.add_argument(
+        "--log-file",
+        default=None,
+        help="Optional path to write a detailed log file",
     )
     p.add_argument(
         "--version",
@@ -441,13 +448,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         pretty_parser = build_parser()
         clean_argv = [x for x in raw_argv if x != "--pretty-screen"]
         default_log_level = "INFO"
+        default_log_file: str | None = None
         if clean_argv:
             try:
                 known_args, _ = parser.parse_known_args(clean_argv)
                 default_log_level = str(getattr(known_args, "log_level", "INFO"))
+                parsed_log_file = getattr(known_args, "log_file", None)
+                default_log_file = str(parsed_log_file) if parsed_log_file else None
             except Exception:
                 pass
-        configure_logging(default_log_level)
+        configure_logging(default_log_level, log_file=default_log_file)
+        logger.info("Starting primer-cli pretty screen: argv=%s", clean_argv)
         return run_pretty_screen(
             pretty_parser,
             _run_handler,
@@ -456,7 +467,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, log_file=getattr(args, "log_file", None))
+    logger.info("Starting primer-cli: argv=%s", raw_argv)
+    logger.info("Resolved command: %s", getattr(args, "command", None))
+    active_log_file = get_active_log_file()
+    if active_log_file is not None:
+        logger.info("Active log file: %s", active_log_file)
 
     handler: Handler = getattr(args, "func", None)
     if handler is None:
@@ -464,16 +480,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 2
 
     try:
-        return _run_handler(handler, args)
+        rc = _run_handler(handler, args)
+        logger.info("Command finished with exit code %s", rc)
+        return rc
 
     except PrimerCliError as e:
+        logger.error("Command failed: %s", e, exc_info=True)
         print(str(e), file=sys.stderr)
         return 2
 
     except KeyboardInterrupt:
+        logger.warning("Interrupted by user", exc_info=True)
         print("Interrupted.", file=sys.stderr)
         return 130
 
     except Exception as e:
+        logger.exception("Unexpected error")
         print(f"Unexpected error: {e}", file=sys.stderr)
         return 1

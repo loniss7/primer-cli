@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+from primer_cli.core.logging import build_log_file_path, enable_file_logging
 from primer_cli.cli.commands import pipeline
 from primer_cli.cli.commands.blastdb import cmd_blastdb_build
 from primer_cli.core.exceptions import PrimerCliError
@@ -12,6 +13,27 @@ from primer_cli.services.blastdb.preflight import validate_blast_database
 from primer_cli.services.qc.fasta_qc import run_fasta_qc
 
 logger = logging.getLogger(__name__)
+
+
+def _enable_production_logging(cfg: ProductionConfig, args) -> Path:
+    explicit = getattr(args, "log_file", None)
+    if explicit:
+        return enable_file_logging(explicit, level=getattr(args, "log_level", "INFO"))
+
+    log_path = build_log_file_path(
+        cfg.runtime.reports_dir,
+        f"{cfg.project.target_gene}_production",
+    )
+    return enable_file_logging(log_path, level=getattr(args, "log_level", "INFO"))
+
+
+def _run_stage(gene: str, label: str, callback, *args, **kwargs):
+    logger.info("production[%s]: %s", gene, label)
+    try:
+        return callback(*args, **kwargs)
+    except Exception:
+        logger.exception("production[%s]: failed during %s", gene, label)
+        raise
 
 
 def _db_manifest_path(cfg: ProductionConfig) -> Path:
@@ -187,10 +209,25 @@ def cmd_production_run(args) -> int:
     cfg.runtime.output_dir.mkdir(parents=True, exist_ok=True)
     cfg.runtime.reports_dir.mkdir(parents=True, exist_ok=True)
     cfg.runtime.downloads_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _enable_production_logging(cfg, args)
 
     gene = cfg.project.target_gene
-    logger.info("production[%s]: stage 1/5 - prepare BLAST DB", gene)
-    _ensure_blastdb_ready(cfg, force_rebuild=bool(getattr(args, "force_rebuild_db", False)))
+    logger.info(
+        "production[%s]: started config=%s work_dir=%s output_dir=%s reports_dir=%s log_file=%s",
+        gene,
+        cfg.config_path,
+        cfg.runtime.work_dir,
+        cfg.runtime.output_dir,
+        cfg.runtime.reports_dir,
+        log_path,
+    )
+    _run_stage(
+        gene,
+        "stage 1/5 - prepare BLAST DB",
+        _ensure_blastdb_ready,
+        cfg,
+        force_rebuild=bool(getattr(args, "force_rebuild_db", False)),
+    )
 
     raw_fasta = cfg.runtime.work_dir / f"{gene}_raw.fasta"
     qc_fasta = cfg.runtime.work_dir / f"{gene}_qc.fasta"
@@ -198,22 +235,32 @@ def cmd_production_run(args) -> int:
     conserved_json = cfg.runtime.output_dir / f"{gene}_conserved.json"
     qc_report = cfg.runtime.reports_dir / f"{gene}_fetch_qc.json"
 
-    logger.info("production[%s]: stage 2/5 - fetch CDS sequences", gene)
-    _run_fetch_stage(cfg, raw_fasta)
-    logger.info("production[%s]: stage 3/5 - FASTA QC", gene)
-    run_fasta_qc(
+    _run_stage(gene, "stage 2/5 - fetch CDS sequences", _run_fetch_stage, cfg, raw_fasta)
+    _run_stage(
+        gene,
+        "stage 3/5 - FASTA QC",
+        run_fasta_qc,
         input_fasta=raw_fasta,
         output_fasta=qc_fasta,
         report_json=qc_report,
     )
-    logger.info("production[%s]: stage 4/5 - align and find conserved regions", gene)
-    _run_align_stage(cfg, qc_fasta, aligned_fasta)
-    _run_conserved_stage(cfg, aligned_fasta, conserved_json)
-    logger.info("production[%s]: stage 5/5 - primer prediction and specificity", gene)
-    _run_predict_stage(
+    _run_stage(gene, "stage 4/5 - align FASTA", _run_align_stage, cfg, qc_fasta, aligned_fasta)
+    _run_stage(
+        gene,
+        "stage 4b/5 - find conserved regions",
+        _run_conserved_stage,
+        cfg,
+        aligned_fasta,
+        conserved_json,
+    )
+    _run_stage(
+        gene,
+        "stage 5/5 - primer prediction and specificity",
+        _run_predict_stage,
         cfg,
         raw_fasta=qc_fasta,
         aligned_fasta=aligned_fasta,
         regions_json=conserved_json,
     )
+    logger.info("production[%s]: completed successfully", gene)
     return 0

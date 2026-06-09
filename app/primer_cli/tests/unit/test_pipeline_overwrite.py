@@ -67,6 +67,8 @@ def test_run_pipeline_overwrites_existing_output_files(
     rc = pipeline.cmd_pipeline(args)
 
     assert rc == 0
+    log_files = list((outdir / "logs").glob("*.log"))
+    assert log_files
     assert (workdir / "raw.fasta").read_text(encoding="utf-8") == "new-raw"
     assert (workdir / "aligned.fasta").read_text(encoding="utf-8") == "new-aligned"
     assert (outdir / "regions.json").read_text(encoding="utf-8") == "new-regions"
@@ -126,6 +128,8 @@ def test_run_pipeline_supports_multiple_genes_in_comma_separated_list(
     rc = pipeline.cmd_pipeline(args)
 
     assert rc == 0
+    log_files = list((outdir / "logs").glob("*.log"))
+    assert log_files
     assert seen_genes == ["vanA", "vanB"]
 
     for gene in ("vanA", "vanB"):

@@ -1,6 +1,8 @@
-# Python bytecode and extension modules
+# Python bytecode and native extensions
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
 *.so
 
@@ -13,10 +15,11 @@ __pycache__/
 .nox/
 .pyre/
 .pytype/
+.cache/
 .dmypy.json
 dmypy.json
 
-# Coverage and reports
+# Coverage and test artifacts
 .coverage
 .coverage.*
 coverage.xml
@@ -31,7 +34,7 @@ site/
 .eggs/
 pip-wheel-metadata/
 
-# Virtual environments and local env files
+# Virtual environments and local environment files
 .venv/
 venv/
 env/
@@ -40,17 +43,18 @@ ENV/
 .env.*
 .python-version
 
-# Jupyter
+# Jupyter and notebooks
 .ipynb_checkpoints/
 notebooks/
 
-# IDE/editor
+# IDE/editor metadata
 .idea/
 .vscode/
 
 # OS/system files
 .DS_Store
 Thumbs.db
+Desktop.ini
 *Zone.Identifier
 
 # Logs and temporary files
@@ -58,43 +62,42 @@ Thumbs.db
 *.tmp
 *.temp
 tmp/
-
-# Generated/runtime folders
-runs/
-work/
-out/
-work_*/
-out_*/
+temp/
 
 # Local Codex metadata
 .codex
 
-# Ignore all local configs except vanA and examples
-config/*.yaml
-config/*.yml
-!config/vanA.production.yaml
-!config/examples/
-!config/examples/**
-!config/*.example.yaml
-!config/*.example.yml
+# Runtime and generated project outputs
+/runs/
+/work/
+/out/
+/reports/
+/downloads/
+/blastdb/
+logs/
+work_*/
+out_*/
 
-# Ignore all data by default
-data/*
+# Generated runtime snapshots inside data/
+/data/work/
+/data/out/
+/data/data/
+/data/synthetic/
 
-# Keep only source/test data needed in repo
-!data/blastdb/
-!data/blastdb/README.md
-!data/blast_test_db/
-!data/blast_test_db/**
-!data/local_negative_panel.fna
-!data/target_gene_contexts.fna
+# Local-only config overrides
+/config/*.local.yaml
+/config/*.local.yml
+/config/*.private.yaml
+/config/*.private.yml
 
-# Ignore generated result files anywhere under data
-data/**/*_top_pairs.json
-data/**/*_top_pairs.csv
-data/**/*_top_pairs.tsv
-data/**/*_top_pairs_report.txt
+# Data: ignore everything by default, keep only committed inputs and test fixtures
+/data/*
+!/data/blastdb/
+!/data/blastdb/README.md
+!/data/blast_test_db/
+!/data/blast_test_db/**
+!/data/local_negative_panel.fna
+!/data/target_gene_contexts.fna
 
-# Research materials and document binaries
-lit/
-*.pdf
+# Research and personal working materials
+/lit/

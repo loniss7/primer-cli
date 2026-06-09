@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from primer_cli.core.logging import build_log_file_path, enable_file_logging
 from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.services.blastdb.config import ProductionConfig, load_production_config
 from primer_cli.services.blastdb.fasta_collect import (
@@ -20,6 +21,18 @@ from primer_cli.services.blastdb.preflight import preflight_blastdb_build, valid
 from primer_cli.services.blastdb.validate import get_blastdb_info
 
 logger = logging.getLogger(__name__)
+
+
+def _enable_blastdb_logging(cfg: ProductionConfig, args) -> Path:
+    explicit = getattr(args, "log_file", None)
+    if explicit:
+        return enable_file_logging(explicit, level=getattr(args, "log_level", "INFO"))
+
+    log_path = build_log_file_path(
+        cfg.runtime.reports_dir,
+        f"{cfg.project.target_gene}_blastdb_build",
+    )
+    return enable_file_logging(log_path, level=getattr(args, "log_level", "INFO"))
 
 
 def _build_work_paths(cfg: ProductionConfig) -> dict[str, Path]:
@@ -90,6 +103,13 @@ def _gene_report_path(cfg: ProductionConfig) -> Path:
 
 
 def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str, object]:
+    logger.info(
+        "BLAST DB build started: gene=%s config=%s db_prefix=%s downloads_dir=%s",
+        cfg.project.target_gene,
+        cfg.config_path,
+        cfg.specificity_db.out_prefix,
+        cfg.runtime.downloads_dir,
+    )
     started_at = datetime.now(timezone.utc).isoformat()
     report: dict[str, object] = {
         "report_type": "gene_specificity_build",
@@ -255,7 +275,13 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
 
 def cmd_blastdb_build(args) -> int:
     cfg = load_production_config(args.config)
-    _run_blastdb_build(cfg, report_path=_gene_report_path(cfg))
+    log_path = _enable_blastdb_logging(cfg, args)
+    logger.info("BLAST DB build log file: %s", log_path)
+    try:
+        _run_blastdb_build(cfg, report_path=_gene_report_path(cfg))
+    except Exception:
+        logger.exception("BLAST DB build failed: gene=%s config=%s", cfg.project.target_gene, cfg.config_path)
+        raise
     return 0
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+import logging
 from typing import Callable, Optional
 
 import requests
@@ -21,6 +22,7 @@ NCBI_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 DEFAULT_DB = "nuccore"
 DEFAULT_EMAIL = "gvansonya@gmail.com"
 DEFAULT_TOOL = "gene_cli"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,12 @@ class NCBIClient:
     def _sleep(self) -> None:
         time.sleep(self.rate_limit_s)
 
+    def _loggable_params(self, params: dict) -> dict:
+        redacted = dict(params)
+        if "WebEnv" in redacted:
+            redacted["WebEnv"] = f"<len={len(str(redacted['WebEnv']))}>"
+        return redacted
+
     def _request(self, path: str, params: dict) -> requests.Response:
         url = f"{NCBI_EUTILS_BASE}/{path}"
         params = dict(params)
@@ -64,23 +72,52 @@ class NCBIClient:
         last_err: Optional[Exception] = None
         for attempt in range(1, attempts + 1):
             try:
+                logger.debug(
+                    "NCBI request start: path=%s attempt=%d/%d params=%s",
+                    path,
+                    attempt,
+                    attempts,
+                    self._loggable_params(params),
+                )
                 r = self._sess().get(url, params=params, timeout=self.timeout)
                 if r.status_code == 200:
                     self._sleep()
+                    logger.debug("NCBI request success: path=%s attempt=%d/%d", path, attempt, attempts)
                     return r
 
                 # Retry transient server-side failures.
                 if r.status_code in {429, 500, 502, 503, 504} and attempt < attempts:
+                    logger.warning(
+                        "NCBI transient HTTP %s for %s attempt %d/%d",
+                        r.status_code,
+                        path,
+                        attempt,
+                        attempts,
+                    )
                     time.sleep(self.retry_backoff_s * attempt)
                     continue
+                logger.error(
+                    "NCBI request failed: path=%s status=%s body=%s",
+                    path,
+                    r.status_code,
+                    r.text[:500],
+                )
                 raise PrimerCliError(f"NCBI HTTP {r.status_code}: {r.text[:500]}")
 
             except RequestException as e:
                 last_err = e
+                logger.warning(
+                    "NCBI request exception for %s attempt %d/%d: %s",
+                    path,
+                    attempt,
+                    attempts,
+                    e,
+                )
                 if attempt >= attempts:
                     break
                 time.sleep(self.retry_backoff_s * attempt)
 
+        logger.error("NCBI request failed after %d attempts for %s: %s", attempts, path, last_err)
         raise PrimerCliError(f"NCBI request failed after {attempts} attempts: {last_err}")
     
     def create_request_query(self, gene_name: str) -> str:

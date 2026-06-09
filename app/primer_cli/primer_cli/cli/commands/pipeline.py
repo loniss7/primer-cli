@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from primer_cli.core.exceptions import PrimerCliError
+from primer_cli.core.logging import build_log_file_path, enable_file_logging
 from primer_cli.core.validation import (
     require_file_exists,
     require_not_directory,
@@ -165,6 +166,15 @@ def _require_blast_db_arg(args) -> str:
 
 def _reports_dir(paths: PipelinePaths) -> Path:
     return paths.outdir / "reports"
+
+
+def _enable_pipeline_logging(args, outdir: Path, prefix: str) -> Path:
+    explicit = getattr(args, "log_file", None)
+    if explicit:
+        return enable_file_logging(explicit, level=getattr(args, "log_level", "INFO"))
+
+    log_path = build_log_file_path(outdir, prefix)
+    return enable_file_logging(log_path, level=getattr(args, "log_level", "INFO"))
 
 
 def _pair_key(forward_seq: str, reverse_seq: str) -> tuple[str, str]:
@@ -325,6 +335,13 @@ def _run_specificity_pool_expansion(
 def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path) -> int:
     _ensure_writable_dir(workdir, "workdir")
     _ensure_writable_dir(outdir, "out")
+    logger.info(
+        "pipeline[%s]: starting workdir=%s outdir=%s max_sequences=%s",
+        gene_name,
+        workdir,
+        outdir,
+        args.max,
+    )
 
     raw_fasta = workdir / "raw.fasta"
     aligned_fasta = workdir / "aligned.fasta"
@@ -346,46 +363,63 @@ def _run_single_gene_pipeline(args, gene_name: str, workdir: Path, outdir: Path)
     _ensure_file_target(paths.primers_json, "top primers JSON")
     _ensure_file_target(paths.primers_report, "top primers report")
 
-    # 1) FETCH
-    rc = cmd_fetch(
-        SimpleNamespace(
-            gene=gene_name,
-            output=str(paths.raw_fasta),
-            max=args.max,
-            query=args.query,
-            email=args.email,
-            batch_size=args.batch_size,
+    logger.info("pipeline[%s]: stage 1/4 - fetch FASTA", gene_name)
+    try:
+        rc = cmd_fetch(
+            SimpleNamespace(
+                gene=gene_name,
+                output=str(paths.raw_fasta),
+                max=args.max,
+                query=args.query,
+                email=args.email,
+                batch_size=args.batch_size,
+            )
         )
-    )
+    except Exception:
+        logger.exception("pipeline[%s]: failed during stage 1/4 - fetch FASTA", gene_name)
+        raise
     if rc != 0:
         return rc
 
-    # 2) ALIGN
-    rc = cmd_align(
-        SimpleNamespace(
-            inp=str(paths.raw_fasta),
-            out=str(paths.aligned_fasta),
-            mafft=args.mafft,
-            mafft_args=args.mafft_args,
+    logger.info("pipeline[%s]: stage 2/4 - align FASTA", gene_name)
+    try:
+        rc = cmd_align(
+            SimpleNamespace(
+                inp=str(paths.raw_fasta),
+                out=str(paths.aligned_fasta),
+                mafft=args.mafft,
+                mafft_args=args.mafft_args,
+            )
         )
-    )
+    except Exception:
+        logger.exception("pipeline[%s]: failed during stage 2/4 - align FASTA", gene_name)
+        raise
     if rc != 0:
         return rc
 
-    # 3) CONSERVED
-    rc = cmd_conserved(
-        SimpleNamespace(
-            inp=str(paths.aligned_fasta),
-            window=args.window,
-            quantile=args.quantile,
-            out=str(paths.regions_json),
+    logger.info("pipeline[%s]: stage 3/4 - detect conserved regions", gene_name)
+    try:
+        rc = cmd_conserved(
+            SimpleNamespace(
+                inp=str(paths.aligned_fasta),
+                window=args.window,
+                quantile=args.quantile,
+                out=str(paths.regions_json),
+            )
         )
-    )
+    except Exception:
+        logger.exception("pipeline[%s]: failed during stage 3/4 - detect conserved regions", gene_name)
+        raise
     if rc != 0:
         return rc
 
-    # 4) PRIMERS
-    _run_primers_stage(paths=paths, args=args)
+    logger.info("pipeline[%s]: stage 4/4 - primer prediction and specificity", gene_name)
+    try:
+        _run_primers_stage(paths=paths, args=args)
+    except Exception:
+        logger.exception("pipeline[%s]: failed during stage 4/4 - primer prediction and specificity", gene_name)
+        raise
+    logger.info("pipeline[%s]: completed successfully", gene_name)
     return 0
 
 
@@ -438,10 +472,21 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
             fix="Set a single character such as 'N'.",
         )
 
+    logger.info(
+        "Primers stage: loading inputs raw=%s alignment=%s regions=%s",
+        paths.raw_fasta,
+        paths.aligned_fasta,
+        paths.regions_json,
+    )
     prep = load_and_prepare_primer_inputs(
         raw_fasta_path=paths.raw_fasta,
         alignment_fasta_path=paths.aligned_fasta,
         conserved_regions_path=paths.regions_json,
+    )
+    logger.info(
+        "Primers stage: loaded alignment_sequences=%d conserved_regions=%d",
+        len(prep.alignment),
+        len(prep.conserved_regions),
     )
 
     consensus, profile = build_consensus_and_msa_profile(
@@ -467,10 +512,12 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not windows:
         raise PrimerCliError("Primers stage: no candidate windows after conserved-region filtering")
+    logger.info("Primers stage: candidate windows=%d", len(windows))
 
     single = build_single_primers_from_windows(windows=windows, consensus_sequence=consensus)
     if not single:
         raise PrimerCliError("Primers stage: no single-primer candidates built from windows")
+    logger.info("Primers stage: single-primer candidates=%d", len(single))
 
     single_metrics = calculate_single_primer_metrics(
         single,
@@ -491,10 +538,12 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not single_metrics:
         raise PrimerCliError("Primers stage: no single-primer metrics produced")
+    logger.info("Primers stage: single-primer metrics=%d", len(single_metrics))
 
     filtered = [m for m in single_metrics if m.passed_basic_filters]
     if not filtered:
         raise PrimerCliError("Primers stage: no single primers after basic thermodynamic filters")
+    logger.info("Primers stage: single primers after thermodynamic filters=%d", len(filtered))
 
     single_cov = calculate_single_primer_msa_coverage(
         primers=filtered,
@@ -514,6 +563,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not single_cov:
         raise PrimerCliError("Primers stage: no single primers after MSA coverage filtering")
+    logger.info("Primers stage: single primers after MSA coverage=%d", len(single_cov))
 
     pairs = build_candidate_primer_pairs(
         single_cov,
@@ -528,6 +578,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not pairs:
         raise PrimerCliError("Primers stage: no primer pairs after pair-building filters")
+    logger.info("Primers stage: candidate primer pairs=%d", len(pairs))
 
     pair_cov = calculate_pair_coverage_on_msa(
         pairs,
@@ -543,6 +594,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not pair_cov:
         raise PrimerCliError("Primers stage: no primer pairs after pair-coverage filtering")
+    logger.info("Primers stage: primer pairs after coverage=%d", len(pair_cov))
 
     single_metrics_by_seq = {m.sequence.upper(): m for m in filtered}
     single_cov_by_seq = {m.sequence.upper(): m for m in single_cov}
@@ -553,17 +605,32 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not pre_scored:
         raise PrimerCliError("Primers stage: no primer pairs available for pre-BLAST scoring")
+    logger.info("Primers stage: pre-BLAST scored pairs=%d", len(pre_scored))
 
     ordered_pairs = _build_diverse_pair_order(pre_scored, pair_cov_by_key)
     blast_db = _require_blast_db_arg(args)
     blast_cfg = _build_blast_specificity_cfg(args, blast_db=blast_db)
     specificity_service = BlastSpecificityService(blast_cfg)
     preflight = specificity_service.preflight()
+    logger.info(
+        "Primers stage: running BLAST specificity db=%s task=%s initial_pool=%d top_k_unique_primers=%d",
+        blast_db,
+        blast_cfg.task,
+        blast_cfg.pair_pool_size,
+        blast_cfg.top_k_unique_primers,
+    )
     specificity_result = _run_specificity_pool_expansion(
         ordered_pairs=ordered_pairs,
         top_n=int(args.top_n),
         blast_cfg=blast_cfg,
         specificity_service=specificity_service,
+    )
+    logger.info(
+        "Primers stage: specificity evaluated_pairs=%d validated_pairs=%d unique_sequences=%d pool_expansions=%d",
+        len(specificity_result.evaluated_pairs),
+        len(specificity_result.validated_pairs),
+        len(specificity_result.hits_by_sequence),
+        specificity_result.pool_expansions,
     )
 
     reports_dir = _reports_dir(paths)
@@ -629,6 +696,7 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not scored:
         raise PrimerCliError("Primers stage: no primer pairs left for final scoring")
+    logger.info("Primers stage: final scored primer pairs=%d", len(scored))
 
     final_rows = build_top_primer_pair_results(
         scored_pairs=scored,
@@ -644,10 +712,18 @@ def _run_primers_stage(paths: PipelinePaths, args) -> None:
     )
     if not final_rows:
         raise PrimerCliError("Primers stage: no primer pairs passed the final selection")
+    logger.info("Primers stage: final selected primer pairs=%d", len(final_rows))
 
     write_top_pairs_csv(final_rows, paths.primers_csv)
     write_top_pairs_json(final_rows, paths.primers_json)
     write_human_readable_report(final_rows, paths.primers_report)
+    logger.info(
+        "Primers stage: reports written csv=%s json=%s report=%s blast_summary=%s",
+        paths.primers_csv,
+        paths.primers_json,
+        paths.primers_report,
+        blast_summary_path,
+    )
 
 
 def cmd_pipeline(args) -> int:
@@ -656,6 +732,8 @@ def cmd_pipeline(args) -> int:
     genes = _parse_gene_names(args.gene_name)
     workdir = Path(args.workdir)
     outdir = Path(args.out)
+    log_path = _enable_pipeline_logging(args, outdir, "pipeline_run")
+    logger.info("Pipeline command started: genes=%s workdir=%s outdir=%s log_file=%s", genes, workdir, outdir, log_path)
 
     if len(genes) == 1:
         return _run_single_gene_pipeline(args, genes[0], workdir, outdir)
@@ -709,6 +787,15 @@ def cmd_pipeline(args) -> int:
 def cmd_predict(args) -> int:
     outdir = Path(args.out)
     _ensure_writable_dir(outdir, "out")
+    log_path = _enable_pipeline_logging(args, outdir, "predict")
+    logger.info(
+        "Predict command started: raw=%s alignment=%s regions=%s outdir=%s log_file=%s",
+        args.raw,
+        args.alignment,
+        args.regions,
+        outdir,
+        log_path,
+    )
 
     paths = _build_paths(
         raw_fasta=Path(args.raw),
@@ -727,6 +814,7 @@ def cmd_predict(args) -> int:
     require_positive_int(int(args.top_n), where="predict --top-n", arg_name="--top-n")
 
     _run_primers_stage(paths=paths, args=args)
+    logger.info("Predict command completed successfully")
     return 0
 
 

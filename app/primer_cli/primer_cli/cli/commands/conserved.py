@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import re
 
@@ -17,6 +18,7 @@ import skbio
 
 
 _NON_ACGT_GAP_RE = re.compile(r"[^ACGT\-\.]")
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_degenerate_msa(in_path: Path) -> skbio.TabularMSA:
@@ -31,7 +33,6 @@ def _sanitize_degenerate_msa(in_path: Path) -> skbio.TabularMSA:
 
 
 def cmd_conserved(args) -> int:
-
     in_path = Path(args.inp)
     out_path = Path(args.out)
 
@@ -49,6 +50,13 @@ def cmd_conserved(args) -> int:
     metric = "inverse_shannon_uncertainty"
     gap_mode = "ignore"
     min_len = 25
+    logger.info(
+        "Starting conserved-region search: input=%s output=%s window=%s quantile=%s",
+        in_path,
+        out_path,
+        args.window,
+        quantile,
+    )
 
     msa = get_tabular_from_msa(in_path)
 
@@ -65,6 +73,7 @@ def cmd_conserved(args) -> int:
     except ValueError as e:
         msg = str(e)
         if "degenerate characters" in msg:
+            logger.warning("Degenerate alignment symbols detected, retrying after sanitization: %s", in_path)
             msa = _sanitize_degenerate_msa(in_path)
             try:
                 regions = finder.find(msa)
@@ -90,5 +99,6 @@ def cmd_conserved(args) -> int:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     write_regions_json(regions, out_path)
+    logger.info("Conserved-region search completed: regions=%d output=%s", len(regions), out_path)
 
     return 0

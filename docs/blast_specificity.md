@@ -27,7 +27,7 @@ BLAST DB builds can emit two tabular metadata files:
 Target-context FASTA headers can include locus annotations such as:
 
 ```text
->ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA
+>ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=gene_ctx_1 gene=gene
 ```
 
 In `production` policy mode, `subjects.tsv` and `target_loci.tsv` are mandatory. The
@@ -60,9 +60,9 @@ Each hit tracks:
 ## Useful commands
 
 ```bash
-primer-cli blastdb build --config config/examples/vanA.production.yaml
-primer-cli blastdb validate --db blastdb/vanA_specificity_panel
-primer-cli blastdb info --db blastdb/vanA_specificity_panel
+primer-cli blastdb build --config config/examples/gene.production.yaml
+primer-cli blastdb validate --db blastdb/gene_specificity_panel
+primer-cli blastdb info --db blastdb/gene_specificity_panel
 ```
 
 ## Reports

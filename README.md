@@ -1,275 +1,208 @@
 # Primer CLI
 
-`primer-cli` — CLI-пайплайн для подбора праймеров по генам устойчивости и другим целевым генам на основе последовательностей из NCBI.
+`primer-cli` is a pipeline for designing primers for bacterial genes, including antimicrobial resistance genes.
 
-Пайплайн объединяет шаги:
-1. `fetch` — загрузка CDS из NCBI E-utilities.
-2. `align` — множественное выравнивание MAFFT.
-3. `conserved` — поиск консервативных окон.
-4. `predict` — генерация, фильтрация и ранжирование пар праймеров.
+## How It Works
 
-Команда `run` выполняет все шаги end-to-end.
+The basic pipeline has four stages:
 
-## Возможности
+1. `fetch` - download CDS sequences from NCBI.
+2. `align` - align sequences with MAFFT.
+3. `conserved` - detect conserved windows.
+4. `predict` - build, filter, and rank primer pairs.
 
-- Полный запуск в одну команду: `primer-cli run`.
-- Работа с одним или несколькими генами (`--genes "vanA,vanB,mcr-1"`).
-- Экспорт результатов в `CSV`, `JSON`, текстовый отчёт.
-- Гибкая параметризация термодинамики, покрытий и критериев 3'-конца.
-- Отдельные команды для пошаговой отладки (`fetch`, `align`, `conserved`, `predict`).
+For production runs, BLAST specificity v2 is added:
 
-## Структура репозитория
+1. build and validate a local BLAST DB;
+2. run `fetch -> QC -> align -> conserved -> predict`;
+3. compute a pre-BLAST score for each candidate pair;
+4. apply diversity-biased ordering;
+5. BLAST only the top-K unique primer sequences;
+6. expand the candidate pool automatically if needed;
+7. apply final scoring and policy evaluation.
 
-- `app/primer_cli/` — Python-пакет и исходный код CLI.
-- `app/primer_cli/primer_cli/` — модули приложения.
-- `app/primer_cli/tests/` — unit и integration тесты.
-- `environment.yml` — окружение Conda (включая внешние bio-tools).
-- `requirements.txt` — минимальная установка через pip (`-e ./app/primer_cli`).
+Production specificity is locus-aware. The full subject is not treated as on-target by substring matching; the DB must have `subjects.tsv` and `target_loci.tsv`.
 
-## Требования
+## Inputs
 
-- Python `3.10+` (рекомендуется `3.11`).
-- MAFFT в `PATH` (обязательно для выравнивания).
-- Доступ в интернет для запросов к NCBI.
-- Опционально: `blast`/`blast+` для расширенных проверок специфичности.
+For a normal run you need:
 
-## Установка
+- gene name or a comma-separated list of genes;
+- `--work-dir` for intermediates;
+- `--output-dir` for outputs;
+- `NCBI_EMAIL` or `--email`;
+- MAFFT in `PATH` or an explicit MAFFT path.
 
-### Вариант 1: Conda (рекомендуется)
+For a production gene run you also need:
 
-```bash
-conda env create -f environment.yml
-conda activate biopy
-```
+- a YAML config for the gene;
+- a local BLAST DB or the ability to build one;
+- `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`;
+- NCBI taxon lists;
+- optional local FASTA files;
+- `subjects.tsv` and `target_loci.tsv`;
+- locus annotations in `target_context` FASTA headers if those records are used.
 
-### Вариант 2: venv + pip
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-## Быстрый старт
-
-```bash
-source .venv/bin/activate
-export NCBI_EMAIL="you@example.com"
-
-primer-cli run \
-  --genes "vanA" \
-  --work-dir ./work \
-  --output-dir ./out \
-  --max-sequences 100
-```
-
-Минимально обязательные аргументы для `run`:
-- `--genes`
-- `--work-dir`
-- `--output-dir`
-
-Если `work-dir` и `output-dir` не существуют, они создаются автоматически.
-
-## Команда run (полный пайплайн)
-
-`primer-cli run` — это основной режим для базового пользователя.  
-Одна команда выполняет весь цикл:
-1. поиск и загрузка CDS из NCBI (`fetch`);
-2. множественное выравнивание (`align`);
-3. поиск консервативных окон (`conserved`);
-4. подбор и ранжирование пар праймеров (`predict`).
-
-Базовый шаблон:
-
-```bash
-primer-cli run \
-  --genes "vanA" \
-  --work-dir ./work \
-  --output-dir ./out
-```
-
-### Ключевые параметры run
-
-| Параметр | Обязательный | Что делает | Пример |
-|---|---|---|---|
-| `--genes` | Да | Ген или список генов через запятую | `"vanA"` / `"vanA,vanB,mcr-1"` |
-| `--work-dir` | Да | Папка для промежуточных файлов (`raw.fasta`, `aligned.fasta`) | `./work` |
-| `--output-dir` | Да | Папка с финальными результатами (`regions.json`, `top_primers.*`) | `./out` |
-| `--max-sequences` | Нет | Сколько последовательностей скачать на ген (быстрее отладка на меньшем числе) | `50`, `100`, `300` |
-| `--window-size` | Нет | Размер окна для поиска консервативных участков | `25` |
-| `--top-quantile` | Нет | Порог отбора лучших консервативных окон (0..1] | `0.8` |
-| `--top-n` | Нет | Сколько лучших пар праймеров сохранить в итогах | `20` |
-| `--email` | Нет* | Email для NCBI (можно вместо этого `NCBI_EMAIL`) | `you@example.com` |
-| `--mafft` | Нет | Путь к MAFFT (если не в `PATH`) | `/usr/bin/mafft` |
-| `--validate-blast` | Нет | Включает дополнительную BLAST-проверку off-target | флаг |
-| `--blast-db` | Нет** | Путь/имя BLAST нуклеотидной БД | `./data/blast_test_db/test_subjects` |
-
-\* Практически рекомендуется всегда задавать `--email` или `NCBI_EMAIL`.
-\** Обязателен только если включен `--validate-blast`.
-
-### Быстрые примеры run
-
-Один ген, стандартный запуск:
-
-```bash
-primer-cli run --genes "vanA" --work-dir ./work --output-dir ./out
-```
-
-Быстрый тестовый прогон (меньше данных):
-
-```bash
-primer-cli run --genes "vanA" --work-dir ./work --output-dir ./out --max-sequences 20
-```
-
-Несколько генов за один запуск:
-
-```bash
-primer-cli run --genes "vanA,vanB,mcr-1" --work-dir ./work --output-dir ./out --max-sequences 100
-```
-
-Запуск с включенной BLAST-валидацией:
-
-```bash
-primer-cli run \
-  --genes "vanA" \
-  --work-dir ./work \
-  --output-dir ./out \
-  --validate-blast \
-  --blast-db ./data/blast_test_db/test_subjects
-```
-
-## Запуск по нескольким генам
-
-```bash
-primer-cli run \
-  --genes "vanA,vanB,mcr-1" \
-  --work-dir ./work \
-  --output-dir ./out
-```
-
-Для multi-gene запуска результаты раскладываются по подпапкам:
+Example target-context header:
 
 ```text
-work/
-  vanA/
-    raw.fasta
-    aligned.fasta
-  vanB/
-    raw.fasta
-    aligned.fasta
-
-out/
-  vanA/
-    regions.json
-    top_primers.csv
-    top_primers.json
-    top_primers.txt
-  vanB/
-    ...
+>ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=gene_ctx_1 gene=gene
 ```
 
-## Пошаговый режим
+## Gene Config
 
-```bash
-# 1) Скачивание последовательностей
-primer-cli fetch --gene vanA --output ./work/raw.fasta --max-sequences 100
+For production runs, copy `config/examples/gene.production.yaml` and change only the gene-specific fields.
 
-# 2) Выравнивание
-primer-cli align --input ./work/raw.fasta --output ./work/aligned.fasta --mafft mafft
+Main sections:
 
-# 3) Консервативные окна
-primer-cli conserved \
-  --input ./work/aligned.fasta \
-  --output ./out/regions.json \
-  --window-size 25 \
-  --top-quantile 0.8
+- `project` - project name, target gene, config version.
+- `runtime` - work/output/reports/downloads directories.
+- `tools` - paths to `datasets`, `mafft`, `blastn`, `makeblastdb`, `blastdbcmd`.
+- `specificity_db` - BLAST DB prefix, NCBI sources, local FASTA files, `subjects.tsv`, `target_loci.tsv`.
+- `design` - conserved-window and candidate-count settings.
+- `blast_specificity` - specificity thresholds, policy mode, pool sizes, BLAST settings.
 
-# 4) Предсказание и ранжирование праймеров
-primer-cli predict \
-  --raw-fasta ./work/raw.fasta \
-  --aligned-fasta ./work/aligned.fasta \
-  --conserved-regions ./out/regions.json \
-  --output-dir ./out
-```
+Minimal example for a generic `gene`:
 
-## Формат выходных файлов
+```yaml
+project:
+  name: gene_primer_design
+  target_gene: gene
+  version: "2026-06-01"
 
-В `output-dir` сохраняются:
-- `regions.json` — найденные консервативные области.
-- `top_primers.csv` — табличный рейтинг пар праймеров.
-- `top_primers.json` — детализированный JSON с метриками.
-- `top_primers.txt` — человекочитаемый отчёт.
+runtime:
+  ncbi_email: "you@example.org"
+  work_dir: "../../work/production_gene"
+  output_dir: "../../out/production_gene"
+  reports_dir: "../../reports/production_gene"
+  downloads_dir: "../../downloads/production_gene"
 
-Основные поля для интерпретации:
-- `pair_coverage` — доля последовательностей, где пара проходит критерии.
-- `tm_forward`, `tm_reverse` — температуры плавления (чем ближе друг к другу, тем лучше).
-- `gc_forward`, `gc_reverse` — GC-состав праймеров.
-- `amplicon_length` — длина ампликона.
-- `final_score` — итоговый скоринг (0..100).
-- `offtarget_summary` — статус проверки off-target.
+specificity_db:
+  out_prefix: "../../blastdb/gene_specificity_panel"
+  subjects_file: "../../reports/production_gene/subjects.tsv"
+  target_loci_file: "../../reports/production_gene/target_loci.tsv"
+  ncbi_datasets:
+    target_taxa:
+      - "Enterococcus faecium"
+      - "Enterococcus faecalis"
+    near_target_taxa:
+      - "Enterococcus hirae"
+      - "Enterococcus durans"
+    background_taxa:
+      - "Staphylococcus aureus"
+  local_fasta:
+    - path: "../../data/local_negative_panel.fna"
+      role: "local_background"
+    - path: "../../data/target_gene_contexts.fna"
+      role: "target_context"
 
-## Логи и отладка
-
-Запуск с подробными логами:
-
-```bash
-primer-cli --log-level DEBUG run --genes vanA --work-dir ./work --output-dir ./out
-```
-
-Если кажется, что процесс "завис":
-- `fetch` может долго работать на больших выборках из NCBI;
-- `align` (MAFFT) часто самый долгий этап;
-- проверьте активность процессов `primer-cli` / `mafft`.
-
-## Тесты
-
-Из директории `app/primer_cli`:
-
-```bash
-pytest
-```
-
-## Частые проблемы
-
-- `mafft: command not found`
-  - Установите MAFFT и убедитесь, что бинарник доступен в `PATH`.
-
-- Ошибки доступа к NCBI
-  - Проверьте интернет, повторите запуск позже, задайте `--email` или `NCBI_EMAIL`.
-
-- Путь указывает на файл вместо папки
-  - Для `--work-dir` и `--output-dir` требуется директория, а не файл.
-
-## BLAST specificity database
-
-For production-level specificity checks, use a local curated BLAST DB together with
-`subjects.tsv` and `target_loci.tsv`.
-
-Build:
-
-```bash
-primer-cli blastdb build --config config/examples/vanA.production.yaml
-```
-
-Run:
-
-```bash
-primer-cli production run --config config/examples/vanA.production.yaml
+blast_specificity:
+  required: true
+  policy_mode: "production"
+  pair_pool_size: 50
+  pair_pool_expansion_step: 25
+  top_k_unique_primers: 60
 ```
 
 Important:
-- `--blast-db` must point to BLAST DB prefix, not to `.fna`.
-- Production mode is fail-closed and requires both `subjects.tsv` and `target_loci.tsv`.
-- `target_context` FASTA headers should include locus annotations such as
-  `locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA`.
-- Subject substring matching is deprecated and should only be used for exploratory work.
-- Specificity v2 writes `blast_hits.tsv`, `predicted_amplicons.tsv`, `pair_specificity.tsv`,
-  `blast_summary.json`, and `specificity_manifest.json`.
-- Do not commit large BLAST DB binary artifacts to Git.
 
-## Roadmap
+- `subjects_file` and `target_loci_file` are mandatory in `production` mode;
+- `policy_mode` must be `production`;
+- `target_context` FASTA headers must include locus coordinates;
+- subject substring matching is deprecated and is only meant for exploratory work.
 
-- Расширенная автоматическая off-target проверка (BLAST) в основном пайплайне.
-- Параллелизация отдельных стадий для ускорения multi-gene запуска.
-- Расширение отчётности и визуализации качества праймеров.
+## How To Run a Gene
+
+Main command:
+
+```bash
+primer-cli production run --config config/examples/gene.production.yaml
+```
+
+To build and validate the BLAST DB manually:
+
+```bash
+primer-cli blastdb build --config config/examples/gene.production.yaml
+primer-cli blastdb validate --db blastdb/gene_specificity_panel
+primer-cli blastdb info --db blastdb/gene_specificity_panel
+```
+
+You can also run the lower-level commands `fetch`, `align`, `conserved`, `predict`, and `run`.
+
+## Production Workflow Example
+
+The production config is `config/examples/gene.production.yaml`. That file shows the full pattern for a real target gene:
+
+- input sources in `specificity_db.ncbi_datasets`;
+- local FASTA panels in `specificity_db.local_fasta`;
+- required production metadata files `subjects_file` and `target_loci_file`;
+- production BLAST policy in `blast_specificity`;
+- production runtime paths in `runtime`.
+
+What `primer-cli production run` does:
+
+1. validates the YAML config;
+2. rebuilds the BLAST DB if it is missing or stale;
+3. fetches CDS sequences for the target gene;
+4. runs FASTA QC;
+5. aligns the QC-passed sequences with MAFFT;
+6. finds conserved regions;
+7. predicts primers;
+8. runs staged BLAST specificity validation:
+   - pre-BLAST score;
+   - diversity-biased pair ordering;
+   - BLAST on top-K unique primers;
+   - automatic pool expansion if needed;
+   - locus-aware policy evaluation;
+9. writes final reports.
+
+Example production command:
+
+```bash
+primer-cli production run --config config/examples/gene.production.yaml
+```
+
+The key outputs for a production run land in:
+
+- `out/production_gene/top_primers.csv`
+- `out/production_gene/top_primers.json`
+- `out/production_gene/top_primers.txt`
+- `out/production_gene/regions.json`
+- `out/production_gene/reports/blast_hits.tsv`
+- `out/production_gene/reports/predicted_amplicons.tsv`
+- `out/production_gene/reports/pair_specificity.tsv`
+- `out/production_gene/reports/blast_summary.json`
+- `out/production_gene/reports/specificity_manifest.json`
+- `reports/production_gene/gene_fetch_qc.json`
+- `reports/production_gene/report_gene.json`
+- `reports/production_gene/subjects.tsv`
+- `reports/production_gene/target_loci.tsv`
+- `blastdb/gene_specificity_panel*`
+
+Intermediate data lives in:
+
+- `work/production_gene`
+- `downloads/production_gene`
+
+## Supported Commands
+
+- `fetch` - download CDS from NCBI.
+- `align` - align FASTA sequences with MAFFT.
+- `conserved` - find conserved windows.
+- `predict` - generate and rank primer pairs.
+- `run` - full pipeline for one or more genes.
+- `blastdb build` - build the local BLAST DB.
+- `blastdb validate` - validate the BLAST DB.
+- `blastdb info` - inspect BLAST DB metadata.
+- `production run` - run the production workflow from a YAML config.
+
+## Requirements
+
+- Python 3.10+.
+- MAFFT.
+- For production mode: `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`.
+- Internet access for NCBI downloads.
+
+## Docs
+
+- `docs/blast_specificity.md`

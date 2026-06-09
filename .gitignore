@@ -42,6 +42,7 @@ ENV/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/
 
 # IDE/editor
 .idea/
@@ -52,42 +53,47 @@ ENV/
 Thumbs.db
 *Zone.Identifier
 
-# Logs and temporary outputs
+# Logs and temporary files
 *.log
 *.tmp
 *.temp
 tmp/
 
-# Project runtime outputs (keep source input data)
-data/*_top_pairs.json
-data/*_top_pairs.csv
-data/*_top_pairs.tsv
-data/*_top_pairs_report.txt
-
-# Project folders with generated/working data
-data/*
-!data/blastdb/
-data/blastdb/**
-!data/blastdb/
-!data/blastdb/README.md
-!data/blastdb/**/
-!data/blastdb/**/manifest.tsv
-!data/blastdb/**/build_report.json
-!data/blastdb/**/subjects.clean.fna.sha256
-notebooks/
+# Generated/runtime folders
+runs/
 work/
 out/
 work_*/
 out_*/
 
-# Local codex metadata
+# Local Codex metadata
 .codex
 
-# Local project configs (keep only examples in Git)
+# Ignore all local configs except vanA and examples
 config/*.yaml
-!config/*.example.yaml
 config/*.yml
+!config/vanA.production.yaml
+!config/examples/
+!config/examples/**
+!config/*.example.yaml
 !config/*.example.yml
+
+# Ignore all data by default
+data/*
+
+# Keep only source/test data needed in repo
+!data/blastdb/
+!data/blastdb/README.md
+!data/blast_test_db/
+!data/blast_test_db/**
+!data/local_negative_panel.fna
+!data/target_gene_contexts.fna
+
+# Ignore generated result files anywhere under data
+data/**/*_top_pairs.json
+data/**/*_top_pairs.csv
+data/**/*_top_pairs.tsv
+data/**/*_top_pairs_report.txt
 
 # Research materials and document binaries
 lit/

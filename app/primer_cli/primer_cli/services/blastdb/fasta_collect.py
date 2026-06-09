@@ -27,6 +27,8 @@ def _find_fasta_files(root: Path) -> list[Path]:
 def collect_ncbi_fasta_sources(batches: list[DownloadedTaxonBatch]) -> list[FastaInputSource]:
     out: list[FastaInputSource] = []
     for batch in batches:
+        if batch.status != "downloaded":
+            continue
         for fasta_path in _find_fasta_files(batch.unpack_dir):
             out.append(
                 FastaInputSource(

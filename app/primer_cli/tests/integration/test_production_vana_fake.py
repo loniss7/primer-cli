@@ -216,3 +216,4 @@ blast_specificity:
     assert (tmp_path / "out" / "top_primers.csv").exists()
     assert (tmp_path / "reports" / "vanA_fetch_qc.json").exists()
     assert (tmp_path / "out" / "reports" / "blast_summary.json").exists()
+    assert (tmp_path / "reports" / "report_vanA.json").exists()

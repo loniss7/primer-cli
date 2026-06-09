@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,8 @@ from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.services.blastdb.config import ProductionConfig, load_production_config
 from primer_cli.services.blastdb.preflight import validate_blast_database
 from primer_cli.services.qc.fasta_qc import run_fasta_qc
+
+logger = logging.getLogger(__name__)
 
 
 def _db_manifest_path(cfg: ProductionConfig) -> Path:
@@ -37,6 +40,7 @@ def _ensure_blastdb_ready(cfg: ProductionConfig, *, force_rebuild: bool) -> None
         except PrimerCliError:
             pass
 
+    logger.info("production[%s]: rebuilding BLAST DB", cfg.project.target_gene)
     build_args = SimpleNamespace(config=str(cfg.config_path))
     cmd_blastdb_build(build_args)
 
@@ -184,23 +188,28 @@ def cmd_production_run(args) -> int:
     cfg.runtime.reports_dir.mkdir(parents=True, exist_ok=True)
     cfg.runtime.downloads_dir.mkdir(parents=True, exist_ok=True)
 
+    gene = cfg.project.target_gene
+    logger.info("production[%s]: stage 1/5 - prepare BLAST DB", gene)
     _ensure_blastdb_ready(cfg, force_rebuild=bool(getattr(args, "force_rebuild_db", False)))
 
-    gene = cfg.project.target_gene
     raw_fasta = cfg.runtime.work_dir / f"{gene}_raw.fasta"
     qc_fasta = cfg.runtime.work_dir / f"{gene}_qc.fasta"
     aligned_fasta = cfg.runtime.work_dir / f"{gene}_aligned.fasta"
     conserved_json = cfg.runtime.output_dir / f"{gene}_conserved.json"
     qc_report = cfg.runtime.reports_dir / f"{gene}_fetch_qc.json"
 
+    logger.info("production[%s]: stage 2/5 - fetch CDS sequences", gene)
     _run_fetch_stage(cfg, raw_fasta)
+    logger.info("production[%s]: stage 3/5 - FASTA QC", gene)
     run_fasta_qc(
         input_fasta=raw_fasta,
         output_fasta=qc_fasta,
         report_json=qc_report,
     )
+    logger.info("production[%s]: stage 4/5 - align and find conserved regions", gene)
     _run_align_stage(cfg, qc_fasta, aligned_fasta)
     _run_conserved_stage(cfg, aligned_fasta, conserved_json)
+    logger.info("production[%s]: stage 5/5 - primer prediction and specificity", gene)
     _run_predict_stage(
         cfg,
         raw_fasta=qc_fasta,

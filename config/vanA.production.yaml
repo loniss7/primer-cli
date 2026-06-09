@@ -1,14 +1,17 @@
+# Local-only production config for vanA.
+# This file is ignored by Git via .gitignore (config/*.yaml).
+
 project:
   name: vanA_primer_design
   target_gene: vanA
-  version: "2026-06-01"
+  version: "2026-06-08"
 
 runtime:
-  ncbi_email: "bioinformatics-team@example.org"
-  work_dir: "../../work/production_vana"
-  output_dir: "../../out/production_vana"
-  reports_dir: "../../reports/production_vana"
-  downloads_dir: "../../downloads/production_vana"
+  ncbi_email: "you@example.org"
+  work_dir: "../runs/production_vana/work"
+  output_dir: "../runs/production_vana/out"
+  reports_dir: "../runs/production_vana/reports"
+  downloads_dir: "../runs/production_vana/downloads"
 
 tools:
   datasets_bin: "datasets"
@@ -18,13 +21,13 @@ tools:
   blastdbcmd_bin: "blastdbcmd"
 
 specificity_db:
-  out_prefix: "../../blastdb/vanA_specificity_panel"
+  out_prefix: "../runs/production_vana/blastdb/vanA_specificity_panel"
   title: "vanA production specificity panel"
   dbtype: "nucl"
   blastdb_version: 5
   parse_seqids: true
-  subjects_file: "../../reports/production_vana/subjects.tsv"
-  target_loci_file: "../../reports/production_vana/target_loci.tsv"
+  subjects_file: "../runs/production_vana/reports/subjects.tsv"
+  target_loci_file: "../runs/production_vana/reports/target_loci.tsv"
 
   ncbi_datasets:
     assembly_level:
@@ -46,11 +49,11 @@ specificity_db:
       - "Lactococcus lactis"
 
   local_fasta:
-    - path: "../../data/local_negative_panel.fna"
+    - path: "../data/local_negative_panel.fna"
       role: "local_background"
     # target_context FASTA headers should carry locus annotations, for example:
     # >ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA
-    - path: "../../data/target_gene_contexts.fna"
+    - path: "../data/target_gene_contexts.fna"
       role: "target_context"
 
 design:

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
+from primer_cli.core.exceptions import PrimerCliError
 from primer_cli.utils.subprocess import run_cmd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -13,6 +17,8 @@ class DownloadedTaxonBatch:
     role: str
     zip_path: Path
     unpack_dir: Path
+    status: str = "downloaded"
+    error: str | None = None
 
 
 def download_ncbi_datasets(
@@ -42,32 +48,46 @@ def download_ncbi_datasets(
         zip_path = downloads_dir / f"{idx:03d}_{taxon_slug}.zip"
         unpack_dir = work_dir / "datasets_unpack" / f"{idx:03d}_{taxon_slug}"
 
-        cmd = [
-            datasets_bin,
-            "download",
-            "genome",
-            "taxon",
-            taxon,
-            "--filename",
-            str(zip_path),
-            "--include",
-            "genome",
-        ]
-        if assembly_levels:
-            cmd.extend(["--assembly-level", ",".join(assembly_levels)])
-        run_cmd(cmd)
+        logger.info("Downloading NCBI datasets archive for taxon %s (%s)", taxon, role)
+        try:
+            cmd = [
+                datasets_bin,
+                "download",
+                "genome",
+                "taxon",
+                taxon,
+                "--filename",
+                str(zip_path),
+                "--include",
+                "genome",
+            ]
+            if assembly_levels:
+                cmd.extend(["--assembly-level", ",".join(assembly_levels)])
+            run_cmd(cmd)
 
-        unpack_dir.mkdir(parents=True, exist_ok=True)
-        with ZipFile(zip_path, "r") as zf:
-            zf.extractall(unpack_dir)
+            unpack_dir.mkdir(parents=True, exist_ok=True)
+            with ZipFile(zip_path, "r") as zf:
+                zf.extractall(unpack_dir)
 
-        out.append(
-            DownloadedTaxonBatch(
-                taxon=taxon,
-                role=role,
-                zip_path=zip_path,
-                unpack_dir=unpack_dir,
+            out.append(
+                DownloadedTaxonBatch(
+                    taxon=taxon,
+                    role=role,
+                    zip_path=zip_path,
+                    unpack_dir=unpack_dir,
+                )
             )
-        )
+        except (PrimerCliError, BadZipFile, OSError, ValueError) as exc:
+            logger.warning("Skipping archive for taxon %s: %s", taxon, exc)
+            out.append(
+                DownloadedTaxonBatch(
+                    taxon=taxon,
+                    role=role,
+                    zip_path=zip_path,
+                    unpack_dir=unpack_dir,
+                    status="skipped",
+                    error=str(exc),
+                )
+            )
 
     return out

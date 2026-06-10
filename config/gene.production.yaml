@@ -1,4 +1,4 @@
-# Local-only production config for vanA.
+# Local-only production config for vanA using a shared specificity database.
 # This file is ignored by Git via .gitignore (config/*.yaml).
 
 project:
@@ -7,11 +7,11 @@ project:
   version: "2026-06-08"
 
 runtime:
-  ncbi_email: "you@example.org"
+  ncbi_email: "gvansonya@gmail.com"
   work_dir: "../runs/production_vana/work"
   output_dir: "../runs/production_vana/out"
   reports_dir: "../runs/production_vana/reports"
-  downloads_dir: "../runs/production_vana/downloads"
+  downloads_dir: "../runs/shared_specificity/downloads"
 
 tools:
   datasets_bin: "datasets"
@@ -21,12 +21,12 @@ tools:
   blastdbcmd_bin: "blastdbcmd"
 
 specificity_db:
-  out_prefix: "../runs/production_vana/blastdb/vanA_specificity_panel"
-  title: "vanA production specificity panel"
+  out_prefix: "../runs/shared_specificity/blastdb/shared_specificity_panel"
+  title: "shared production specificity panel"
   dbtype: "nucl"
   blastdb_version: 5
   parse_seqids: true
-  subjects_file: "../runs/production_vana/reports/subjects.tsv"
+  subjects_file: "../runs/shared_specificity/reports/subjects.tsv"
 
   ncbi_datasets:
     assembly_level:
@@ -50,9 +50,7 @@ specificity_db:
   local_fasta:
     - path: "../data/local_negative_panel.fna"
       role: "local_background"
-    # Explicit target reference used for on-target confirmation in production mode.
-    # Coordinate annotations are optional and ignored by the specificity gate.
-    - path: "../data/target_gene_contexts.fna"
+    - path: "../data/target_gene_contexts_all.fna"
       role: "target_context"
 
 design:
@@ -69,7 +67,7 @@ blast_specificity:
   word_size: 7
   evalue: 1000
   max_target_seqs: 500
-  min_hit_identity: 80.0
+  min_hit_identity: 75.0
   min_hit_len: 12
   min_query_coverage: 0.80
   max_total_mismatches: 4
@@ -77,11 +75,11 @@ blast_specificity:
   primer_3p_tail_len: 5
   max_3p_tail_mismatches: 1
   max_3p_tail_gaps: 0
-  require_predicted_on_target_amplicon: false  # diagnostic mode: do not require an explicit on-target amplicon
+  require_predicted_on_target_amplicon: false
   reject_any_offtarget_amplicon: true
   reject_good_3prime_offtarget_amplicon: true
   pair_pool_size: 50
   pair_pool_expansion_step: 25
   top_k_unique_primers: 60
-  pair_min_amplicon: 40
-  pair_max_amplicon: 250
+  pair_min_amplicon: 110
+  pair_max_amplicon: 240

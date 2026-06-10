@@ -385,6 +385,11 @@ def _register_blastdb(sub: argparse._SubParsersAction) -> None:
 
     build = nested.add_parser("build", help="Build BLAST DB from YAML config")
     build.add_argument("--config", required=True, help="Path to production YAML config")
+    build.add_argument(
+        "--gene",
+        default=None,
+        help="Gene name from a multi-gene config. Omit for single-gene configs.",
+    )
     build.set_defaults(func=_lazy_handler("primer_cli.cli.commands.blastdb", "cmd_blastdb_build"))
 
     validate = nested.add_parser("validate", help="Validate an existing BLAST DB")
@@ -404,11 +409,23 @@ def _register_production(sub: argparse._SubParsersAction) -> None:
     sp = sub.add_parser("production", help="Run production workflow from YAML config")
     nested = sp.add_subparsers(dest="production_command", required=True, metavar="PRODUCTION_COMMAND")
 
-    run = nested.add_parser("run", help="Run production vanA workflow from YAML config")
+    run = nested.add_parser("run", help="Run production workflow for one gene from YAML config")
     run.add_argument("--config", required=True, help="Path to production YAML config")
+    run.add_argument(
+        "--gene",
+        default=None,
+        help="Gene name from a multi-gene config. Omit for single-gene configs.",
+    )
     run.add_argument("--force-rebuild-db", action="store_true", help="Rebuild BLAST DB before running")
     run.set_defaults(
         func=_lazy_handler("primer_cli.cli.commands.production", "cmd_production_run")
+    )
+
+    run_batch = nested.add_parser("run-batch", help="Run production workflow for all genes in YAML config")
+    run_batch.add_argument("--config", required=True, help="Path to multi-gene production YAML config")
+    run_batch.add_argument("--force-rebuild-db", action="store_true", help="Rebuild BLAST DB before running")
+    run_batch.set_defaults(
+        func=_lazy_handler("primer_cli.cli.commands.production", "cmd_production_run_batch")
     )
 
 

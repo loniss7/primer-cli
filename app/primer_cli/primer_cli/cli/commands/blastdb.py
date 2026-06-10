@@ -246,7 +246,7 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
 
 
 def cmd_blastdb_build(args) -> int:
-    cfg = load_production_config(args.config)
+    cfg = load_production_config(args.config, gene_name=getattr(args, "gene", None))
     log_path = _enable_blastdb_logging(cfg, args)
     logger.info("BLAST DB build log file: %s", log_path)
     try:

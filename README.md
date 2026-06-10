@@ -1,221 +1,190 @@
 # Primer CLI
 
-`primer-cli` is a pipeline for designing primers for bacterial genes, including antimicrobial resistance genes.
+`primer-cli` — CLI-пайплайн для подбора праймеров к бактериальным генам с обязательной production-проверкой специфичности через локальную BLAST DB.
 
-## How It Works
+## Что делает пайплайн
 
-The basic pipeline has four stages:
+Базовый контур:
 
-1. `fetch` - download CDS sequences from NCBI.
-2. `align` - align sequences with MAFFT.
-3. `conserved` - detect conserved windows.
-4. `predict` - build, filter, and rank primer pairs.
+1. `fetch` — загрузка CDS-последовательностей.
+2. `align` — множественное выравнивание через MAFFT.
+3. `conserved` — поиск консервативных окон.
+4. `predict` — генерация и ранжирование пар праймеров.
 
-For production runs, BLAST specificity v2 is added:
+Production-контур добавляет:
 
-1. build and validate a local BLAST DB;
-2. run `fetch -> QC -> align -> conserved -> predict`;
-3. compute a pre-BLAST score for each candidate pair;
-4. apply diversity-biased ordering;
-5. BLAST only the top-K unique primer sequences;
-6. expand the candidate pool automatically if needed;
-7. apply final scoring and policy evaluation.
+1. сборку или валидацию локальной BLAST DB;
+2. FASTA QC после `fetch`;
+3. BLAST-проверку уникальных праймеров;
+4. pair-specificity policy для фильтрации кандидатных пар.
 
-Production specificity confirms on-target amplicons against an explicit target reference subject. The DB must have `subjects.tsv`, and production mode must include at least one `local_fasta` entry with role `target` or `target_context`.
+## Поддерживаемые режимы конфигурации
 
-## Inputs
+Поддерживаются два формата YAML:
 
-For a normal run you need:
+- single-gene: один `project.target_gene`, явные `runtime.work_dir/output_dir/reports_dir/downloads_dir`;
+- multi-gene: общий `runtime.root_dir` и список `genes`, где у каждого гена свои `fetch`, `specificity_db`, `design`, `blast_specificity`.
 
-- gene name or a comma-separated list of genes;
-- `--work-dir` for intermediates;
-- `--output-dir` for outputs;
-- `NCBI_EMAIL` or `--email`;
-- MAFFT in `PATH` or an explicit MAFFT path.
+Multi-gene режим нужен, когда вы хотите прогнать несколько генов одним запуском и при этом оставить для каждого свои таксоны, target-context FASTA и пороги специфичности.
 
-For a production gene run you also need:
+## Multi-gene конфиг
 
-- a YAML config for the gene;
-- a local BLAST DB or the ability to build one;
-- `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`;
-- NCBI taxon lists;
-- optional local FASTA files;
-- `subjects.tsv`;
-- at least one explicit target reference FASTA with role `target` or `target_context`.
+Актуальный пример: [config/examples/gene.production.yaml](/home/sassy/edia/GenePrimerSelect/config/examples/gene.production.yaml)
 
-Example target-reference header:
+В нём показан batch-конфиг для `gene1` и `gene2`.
+
+Структура:
+
+- `project.name`, `project.version` — общие metadata batch-запуска.
+- `runtime.root_dir` — общий корень, под которым автоматически создаются:
+  `work/<gene>`, `out/<gene>`, `reports/<gene>`, `downloads/<gene>`, `blastdb/<gene>_specificity_panel`.
+- `tools` — пути к `datasets`, `mafft`, `blastn`, `makeblastdb`, `blastdbcmd`.
+- `genes[]` — отдельная настройка на каждый ген.
+
+Для каждого элемента `genes[]`:
+
+- `gene` — имя гена;
+- `fetch.query` или `query` — запрос для `fetch`;
+- `specificity_db` — источники данных для BLAST DB именно этого гена;
+- `design` — параметры design-этапа;
+- `blast_specificity` — policy и BLAST thresholds именно этого гена.
+
+`out_prefix` и `subjects_file` в multi-gene конфиге можно не указывать: они вычисляются автоматически из `runtime.root_dir`.
+
+## Как запускать
+
+Запустить все гены из multi-gene конфига:
+
+```bash
+primer-cli production run-batch --config config/examples/gene.production.yaml
+```
+
+Запустить только один ген из multi-gene конфига:
+
+```bash
+primer-cli production run --config config/examples/gene.production.yaml --gene gene1
+```
+
+Собрать BLAST DB только для одного гена из multi-gene конфига:
+
+```bash
+primer-cli blastdb build --config config/examples/gene.production.yaml --gene gene1
+```
+
+Проверить готовую BLAST DB:
+
+```bash
+primer-cli blastdb validate --db runs/multi_gene_example/blastdb/gene1_specificity_panel
+primer-cli blastdb info --db runs/multi_gene_example/blastdb/gene1_specificity_panel
+```
+
+Single-gene конфиги по-прежнему поддерживаются:
+
+```bash
+primer-cli production run --config path/to/gene.yaml
+primer-cli blastdb build --config path/to/gene.yaml
+```
+
+## Что происходит при batch-запуске
+
+Для каждого гена пайплайн выполняет один и тот же production-контур:
+
+1. проверяет или пересобирает BLAST DB;
+2. получает входные FASTA через `fetch` или `runtime.test_data_dir`;
+3. запускает FASTA QC;
+4. делает alignment;
+5. находит консервативные окна;
+6. строит пары праймеров;
+7. запускает BLAST specificity;
+8. пишет результаты в отдельные каталоги этого гена.
+
+После batch-запуска создаётся общий файл:
+
+- `reports/batch_summary.json`
+
+В нём перечислены успешные и неуспешные гены, а также пути к их output/report/BLAST DB.
+
+## Структура результатов для multi-gene
+
+При `runtime.root_dir: ../../runs/multi_gene_example` структура будет такой:
 
 ```text
->ctx_001 gene=gene source=curated_target_reference
+runs/multi_gene_example/
+  blastdb/
+    gene1_specificity_panel*
+    gene2_specificity_panel*
+  downloads/
+    gene1/
+    gene2/
+  out/
+    gene1/
+    gene2/
+  reports/
+    batch_summary.json
+    gene1/
+    gene2/
+  work/
+    gene1/
+    gene2/
 ```
 
-## Gene Config
+Типичные production-артефакты для каждого гена:
 
-For production runs, copy `config/examples/gene.production.yaml` and change only the gene-specific fields.
+- `out/<gene>/top_primers.csv`
+- `out/<gene>/top_primers.json`
+- `out/<gene>/top_primers.txt`
+- `out/<gene>/reports/blast_summary.json`
+- `out/<gene>/reports/pair_specificity.tsv`
+- `reports/<gene>/<gene>_fetch_qc.json`
+- `reports/<gene>/report_<gene>.json`
+- `reports/<gene>/subjects.tsv`
 
-Main sections:
+## Offline и тестовый контур
 
-- `project` - project name, target gene, config version.
-- `runtime` - work/output/reports/downloads directories.
-- `tools` - paths to `datasets`, `mafft`, `blastn`, `makeblastdb`, `blastdbcmd`.
-- `specificity_db` - BLAST DB prefix, NCBI sources, local FASTA files, and `subjects.tsv`.
-- `design` - conserved-window and candidate-count settings.
-- `blast_specificity` - specificity thresholds, policy mode, pool sizes, BLAST settings.
+Если задан `runtime.test_data_dir`, stage `fetch` не обращается к интернету, а ищет локальные FASTA:
 
-Minimal example for a generic `gene`:
+- `<gene>_raw.fasta`
+- `<gene>.raw.fasta`
+- `<gene>.fasta`
+- `<gene>.fa`
+- `raw.fasta`
 
-```yaml
-project:
-  name: gene_primer_design
-  target_gene: gene
-  version: "2026-06-01"
+Это позволяет прогонять production-контур на синтетических данных.
 
-runtime:
-  ncbi_email: "you@example.org"
-  work_dir: "../../work/production_gene"
-  output_dir: "../../out/production_gene"
-  reports_dir: "../../reports/production_gene"
-  downloads_dir: "../../downloads/production_gene"
+Пример offline-конфига: [config/examples/test_gene.synthetic_offline.production.yaml](/home/sassy/edia/GenePrimerSelect/config/examples/test_gene.synthetic_offline.production.yaml)
 
-specificity_db:
-  out_prefix: "../../blastdb/gene_specificity_panel"
-  subjects_file: "../../reports/production_gene/subjects.tsv"
-  ncbi_datasets:
-    target_taxa:
-      - "Enterococcus faecium"
-      - "Enterococcus faecalis"
-    near_target_taxa:
-      - "Enterococcus hirae"
-      - "Enterococcus durans"
-    background_taxa:
-      - "Staphylococcus aureus"
-  local_fasta:
-    - path: "../../data/local_negative_panel.fna"
-      role: "local_background"
-    - path: "../../data/target_gene_contexts.fna"
-      role: "target_context"
+## Логирование
 
-blast_specificity:
-  required: true
-  policy_mode: "production"
-  pair_pool_size: 50
-  pair_pool_expansion_step: 25
-  top_k_unique_primers: 60
-```
+- любая команда принимает `--log-level` и `--log-file`;
+- `production run` и `blastdb build` пишут логи в `reports/<gene>/logs/` или `reports_dir/logs/`;
+- `production run-batch` пишет общий batch-log в `reports/logs/`, а также отдельные логи каждого гена.
 
-Important:
-
-- `subjects_file` is mandatory in `production` mode;
-- `policy_mode` must be `production`;
-- at least one `local_fasta` entry with role `target` or `target_context` is required when `require_predicted_on_target_amplicon: true`;
-- subject substring matching is deprecated and is only meant for exploratory work.
-
-## How To Run a Gene
-
-Main command:
+Пример:
 
 ```bash
-primer-cli production run --config config/examples/gene.production.yaml
+primer-cli production run-batch --config config/examples/gene.production.yaml --log-level DEBUG
 ```
 
-To build and validate the BLAST DB manually:
+## Команды
 
-```bash
-primer-cli blastdb build --config config/examples/gene.production.yaml
-primer-cli blastdb validate --db blastdb/gene_specificity_panel
-primer-cli blastdb info --db blastdb/gene_specificity_panel
-```
+- `fetch`
+- `align`
+- `conserved`
+- `predict`
+- `run`
+- `blastdb build`
+- `blastdb validate`
+- `blastdb info`
+- `production run`
+- `production run-batch`
 
-You can also run the lower-level commands `fetch`, `align`, `conserved`, `predict`, and `run`.
+## Требования
 
-## Logging
+- Python 3.10+
+- MAFFT
+- для production-режима: `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`
+- доступ в интернет, если не используется `runtime.test_data_dir`
 
-The CLI now writes detailed stage and error logs.
+## Документация
 
-- Any command can write to an explicit file with `--log-file path/to/run.log`.
-- `run` and `predict` automatically create timestamped logs in `OUTPUT_DIR/logs/`.
-- `production run` and `blastdb build` automatically create timestamped logs in `reports_dir/logs/`.
-- Unexpected errors and handled `PrimerCliError` failures are logged with traceback, so you can see exactly which stage failed.
-
-Example:
-
-```bash
-primer-cli production run --config config/examples/gene.production.yaml --log-level DEBUG
-```
-
-## Production Workflow Example
-
-The production config is `config/examples/gene.production.yaml`. That file shows the full pattern for a real target gene:
-
-- input sources in `specificity_db.ncbi_datasets`;
-- local FASTA panels in `specificity_db.local_fasta`;
-- required production metadata file `subjects_file`;
-- production BLAST policy in `blast_specificity`;
-- production runtime paths in `runtime`.
-
-What `primer-cli production run` does:
-
-1. validates the YAML config;
-2. rebuilds the BLAST DB if it is missing or stale;
-3. fetches CDS sequences for the target gene;
-4. runs FASTA QC;
-5. aligns the QC-passed sequences with MAFFT;
-6. finds conserved regions;
-7. predicts primers;
-8. runs staged BLAST specificity validation:
-   - pre-BLAST score;
-   - diversity-biased pair ordering;
-   - BLAST on top-K unique primers;
-   - automatic pool expansion if needed;
-   - subject-level target-reference policy evaluation;
-9. writes final reports.
-
-Example production command:
-
-```bash
-primer-cli production run --config config/examples/gene.production.yaml
-```
-
-The key outputs for a production run land in:
-
-- `out/production_gene/top_primers.csv`
-- `out/production_gene/top_primers.json`
-- `out/production_gene/top_primers.txt`
-- `out/production_gene/regions.json`
-- `out/production_gene/reports/blast_hits.tsv`
-- `out/production_gene/reports/predicted_amplicons.tsv`
-- `out/production_gene/reports/pair_specificity.tsv`
-- `out/production_gene/reports/blast_summary.json`
-- `out/production_gene/reports/specificity_manifest.json`
-- `reports/production_gene/gene_fetch_qc.json`
-- `reports/production_gene/report_gene.json`
-- `reports/production_gene/subjects.tsv`
-- `blastdb/gene_specificity_panel*`
-
-Intermediate data lives in:
-
-- `work/production_gene`
-- `downloads/production_gene`
-
-## Supported Commands
-
-- `fetch` - download CDS from NCBI.
-- `align` - align FASTA sequences with MAFFT.
-- `conserved` - find conserved windows.
-- `predict` - generate and rank primer pairs.
-- `run` - full pipeline for one or more genes.
-- `blastdb build` - build the local BLAST DB.
-- `blastdb validate` - validate the BLAST DB.
-- `blastdb info` - inspect BLAST DB metadata.
-- `production run` - run the production workflow from a YAML config.
-
-## Requirements
-
-- Python 3.10+.
-- MAFFT.
-- For production mode: `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`.
-- Internet access for NCBI downloads.
-
-## Docs
-
-- `docs/blast_specificity.md`
+- [docs/blast_specificity.md](/home/sassy/edia/GenePrimerSelect/docs/blast_specificity.md)

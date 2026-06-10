@@ -414,3 +414,244 @@ blast_specificity:
     assert rc == 0
     assert (tmp_path / "work" / "vanA_raw.fasta").read_text(encoding="utf-8") == fetched.read_text(encoding="utf-8")
     assert (tmp_path / "out" / "top_primers.csv").exists()
+
+
+def test_production_run_batch_multi_gene_config(tmp_path: Path, monkeypatch) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    makeblastdb = bin_dir / "makeblastdb.cmd"
+    blastdbcmd = bin_dir / "blastdbcmd.cmd"
+    datasets = bin_dir / "datasets.cmd"
+    blastn = bin_dir / "blastn.cmd"
+    mafft = bin_dir / "mafft.cmd"
+    makeblastdb_py = bin_dir / "fake_makeblastdb.py"
+    blastdbcmd_py = bin_dir / "fake_blastdbcmd.py"
+    datasets_py = bin_dir / "fake_datasets.py"
+    blastn_py = bin_dir / "fake_blastn.py"
+    mafft_py = bin_dir / "fake_mafft.py"
+
+    _write_fake_cmd(makeblastdb, f'@echo off\r\n"{sys.executable}" "{makeblastdb_py}" %*\r\n')
+    _write_fake_cmd(blastdbcmd, f'@echo off\r\n"{sys.executable}" "{blastdbcmd_py}" %*\r\n')
+    _write_fake_cmd(datasets, f'@echo off\r\n"{sys.executable}" "{datasets_py}" %*\r\n')
+    _write_fake_cmd(blastn, f'@echo off\r\n"{sys.executable}" "{blastn_py}" %*\r\n')
+    _write_fake_cmd(mafft, f'@echo off\r\n"{sys.executable}" "{mafft_py}" %*\r\n')
+
+    makeblastdb_py.write_text(
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if any(a in ('--version', '-version', 'version', '--help') for a in args):\n"
+        "    print('makeblastdb fake 1.0')\n"
+        "    raise SystemExit(0)\n"
+        "out = args[args.index('-out') + 1]\n"
+        "open(out + '.nin', 'w', encoding='utf-8').write('fake')\n",
+        encoding="utf-8",
+    )
+    blastdbcmd_py.write_text("print('Database: fake_db')\n", encoding="utf-8")
+    datasets_py.write_text("print('datasets fake 1.0')\n", encoding="utf-8")
+    blastn_py.write_text(
+        "import sys\n"
+        "if any(a in ('--version', '-version', 'version', '--help') for a in sys.argv[1:]):\n"
+        "    print('blastn fake 1.0')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    mafft_py.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "if '--version' in args:\n"
+        "    print('mafft fake 1.0')\n"
+        "    raise SystemExit(0)\n"
+        "input_path = Path(args[-1])\n"
+        "sys.stdout.write(input_path.read_text(encoding='utf-8'))\n"
+        "sys.stderr.write('done.\\n')\n",
+        encoding="utf-8",
+    )
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "gene1_target.fna").write_text(
+        ">gene1_ctx\nACGTACGTACGTACGTACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
+    (data_dir / "gene2_target.fna").write_text(
+        ">gene2_ctx\nTTGCAATTGCAATTGCAATTGCAATTGCAATT\n",
+        encoding="utf-8",
+    )
+
+    test_data_dir = tmp_path / "test_data"
+    test_data_dir.mkdir()
+    (test_data_dir / "gene1_raw.fasta").write_text(
+        ">gene1_1\nATGAATAGAATAAAAGTTGCAATACTGTTTTTATCGTGGGCGTTGATAGTCAAGCGGTTTTCATAATGTCGCGTTGTCTTAAACGTTGCAATACTGTTTT\n"
+        ">gene1_2\nATGAATAGAATAAAAGTTGCAATACTGTTTTCATCGTGGGCGTTGATAGTCAAGCGGTTTTCATAATGTCGCGTTGTCTTAAACGTTGCAATACTGTTTT\n",
+        encoding="utf-8",
+    )
+    (test_data_dir / "gene2_raw.fasta").write_text(
+        ">gene2_1\nTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGG\n"
+        ">gene2_2\nTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGGTTTCCCAAAGGGTATCCCAAAGGGTTTCCCAAAGGG\n",
+        encoding="utf-8",
+    )
+
+    cfg = tmp_path / "batch.yaml"
+    cfg.write_text(
+        f"""
+project:
+  name: batch_test
+  version: "1"
+runtime:
+  ncbi_email: "team@example.org"
+  root_dir: "{(tmp_path / 'runs').as_posix()}"
+  test_data_dir: "{test_data_dir.as_posix()}"
+tools:
+  datasets_bin: "{datasets.as_posix()}"
+  mafft_bin: "{mafft.as_posix()}"
+  blastn_bin: "{blastn.as_posix()}"
+  makeblastdb_bin: "{makeblastdb.as_posix()}"
+  blastdbcmd_bin: "{blastdbcmd.as_posix()}"
+genes:
+  - gene: gene1
+    fetch:
+      query: "gene1[Gene] AND bacteria[Organism]"
+    specificity_db:
+      title: "gene1 panel"
+      dbtype: "nucl"
+      blastdb_version: 5
+      parse_seqids: true
+      ncbi_datasets:
+        assembly_level: []
+        target_taxa: []
+        near_target_taxa: []
+        background_taxa: []
+      local_fasta:
+        - path: "{(data_dir / 'gene1_target.fna').as_posix()}"
+          role: "target_context"
+    design:
+      max_sequences: 10
+      mafft_args: "--auto --nuc"
+      window_size: 25
+      top_quantile: 0.8
+      top_n: 5
+    blast_specificity:
+      required: true
+      policy_mode: production
+      task: "blastn-short"
+      word_size: 7
+      evalue: 1000
+      max_target_seqs: 500
+      min_hit_identity: 80
+      min_hit_len: 12
+      min_query_coverage: 0.8
+      max_total_mismatches: 4
+      max_total_gaps: 0
+      primer_3p_tail_len: 5
+      max_3p_tail_mismatches: 1
+      max_3p_tail_gaps: 0
+      require_predicted_on_target_amplicon: true
+      reject_any_offtarget_amplicon: true
+      reject_good_3prime_offtarget_amplicon: true
+      pair_pool_size: 50
+      pair_pool_expansion_step: 25
+      top_k_unique_primers: 60
+  - gene: gene2
+    fetch:
+      query: "gene2[Gene] AND bacteria[Organism]"
+    specificity_db:
+      title: "gene2 panel"
+      dbtype: "nucl"
+      blastdb_version: 5
+      parse_seqids: true
+      ncbi_datasets:
+        assembly_level: []
+        target_taxa: []
+        near_target_taxa: []
+        background_taxa: []
+      local_fasta:
+        - path: "{(data_dir / 'gene2_target.fna').as_posix()}"
+          role: "target_context"
+    design:
+      max_sequences: 10
+      mafft_args: "--auto --nuc"
+      window_size: 21
+      top_quantile: 0.85
+      top_n: 4
+    blast_specificity:
+      required: true
+      policy_mode: production
+      task: "blastn-short"
+      word_size: 7
+      evalue: 1000
+      max_target_seqs: 500
+      min_hit_identity: 80
+      min_hit_len: 12
+      min_query_coverage: 0.8
+      max_total_mismatches: 4
+      max_total_gaps: 0
+      primer_3p_tail_len: 5
+      max_3p_tail_mismatches: 1
+      max_3p_tail_gaps: 0
+      require_predicted_on_target_amplicon: true
+      reject_any_offtarget_amplicon: true
+      reject_good_3prime_offtarget_amplicon: true
+      pair_pool_size: 50
+      pair_pool_expansion_step: 25
+      top_k_unique_primers: 60
+""".strip(),
+        encoding="utf-8",
+    )
+
+    def _fake_predict_stage(cfg_obj, *, raw_fasta: Path, aligned_fasta: Path, regions_json: Path) -> None:
+        assert raw_fasta.exists()
+        cfg_obj.runtime.output_dir.mkdir(parents=True, exist_ok=True)
+        reports_dir = cfg_obj.runtime.output_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        (cfg_obj.runtime.output_dir / "top_primers.csv").write_text(
+            "forward_sequence,reverse_sequence,blast_status\nAAAA,TTTT,passed\n",
+            encoding="utf-8",
+        )
+        (cfg_obj.runtime.output_dir / "top_primers.json").write_text(
+            '[{"forward_sequence": "AAAA", "reverse_sequence": "TTTT", "blast_status": "passed"}]',
+            encoding="utf-8",
+        )
+        (cfg_obj.runtime.output_dir / "top_primers.txt").write_text(
+            f"Top primer pairs for {cfg_obj.project.target_gene}: 1\n",
+            encoding="utf-8",
+        )
+        (reports_dir / "blast_summary.json").write_text(
+            json.dumps(
+                {
+                    "gene": cfg_obj.project.target_gene,
+                    "blast_db": str(cfg_obj.specificity_db.out_prefix),
+                    "pair_count_after_policy": 1,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def _fake_conserved_stage(cfg_obj, input_fasta: Path, output_json: Path) -> None:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(
+            '[{"start_col": 0, "end_col": 80, "mean_score": 1.0}]',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(production, "_run_conserved_stage", _fake_conserved_stage)
+    monkeypatch.setattr(production, "_run_predict_stage", _fake_predict_stage)
+
+    rc = production.cmd_production_run_batch(
+        type("Args", (), {"config": str(cfg), "force_rebuild_db": False})()
+    )
+
+    assert rc == 0
+    assert (tmp_path / "runs" / "work" / "gene1" / "gene1_raw.fasta").exists()
+    assert (tmp_path / "runs" / "work" / "gene2" / "gene2_raw.fasta").exists()
+    assert (tmp_path / "runs" / "out" / "gene1" / "top_primers.csv").exists()
+    assert (tmp_path / "runs" / "out" / "gene2" / "top_primers.csv").exists()
+    summary_path = tmp_path / "runs" / "reports" / "batch_summary.json"
+    assert summary_path.exists()
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["gene_count"] == 2
+    assert summary["succeeded_count"] == 2
+    assert summary["failed_count"] == 0
+    assert {item["gene"] for item in summary["succeeded"]} == {"gene1", "gene2"}

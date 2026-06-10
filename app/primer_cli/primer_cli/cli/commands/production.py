@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 import shutil
@@ -9,7 +10,13 @@ from primer_cli.core.logging import build_log_file_path, enable_file_logging
 from primer_cli.cli.commands import pipeline
 from primer_cli.cli.commands.blastdb import cmd_blastdb_build
 from primer_cli.core.exceptions import PrimerCliError
-from primer_cli.services.blastdb.config import ProductionConfig, load_production_config
+from primer_cli.services.blastdb.config import (
+    MultiGeneProductionConfig,
+    ProductionConfig,
+    build_gene_production_config,
+    load_multi_gene_config,
+    load_production_config,
+)
 from primer_cli.services.blastdb.preflight import validate_blast_database
 from primer_cli.services.qc.fasta_qc import run_fasta_qc
 
@@ -51,6 +58,18 @@ def _enable_production_logging(cfg: ProductionConfig, args) -> Path:
     return enable_file_logging(log_path, level=getattr(args, "log_level", "INFO"))
 
 
+def _enable_batch_logging(cfg: MultiGeneProductionConfig, args) -> Path:
+    explicit = getattr(args, "log_file", None)
+    if explicit:
+        return enable_file_logging(explicit, level=getattr(args, "log_level", "INFO"))
+
+    log_path = build_log_file_path(
+        cfg.runtime.root_dir / "reports",
+        f"{cfg.project.name}_batch",
+    )
+    return enable_file_logging(log_path, level=getattr(args, "log_level", "INFO"))
+
+
 def _run_stage(gene: str, label: str, callback, *args, **kwargs):
     logger.info("production[%s]: %s", gene, label)
     try:
@@ -87,7 +106,7 @@ def _ensure_blastdb_ready(cfg: ProductionConfig, *, force_rebuild: bool) -> None
             pass
 
     logger.info("production[%s]: rebuilding BLAST DB", cfg.project.target_gene)
-    build_args = SimpleNamespace(config=str(cfg.config_path))
+    build_args = SimpleNamespace(config=str(cfg.config_path), gene=cfg.project.target_gene)
     cmd_blastdb_build(build_args)
 
 
@@ -111,7 +130,7 @@ def _run_fetch_stage(cfg: ProductionConfig, raw_fasta: Path) -> None:
             output=str(raw_fasta),
             max=cfg.design.max_sequences,
             email=cfg.runtime.ncbi_email,
-            query=None,
+            query=cfg.fetch_query,
             batch_size=20,
         )
     )
@@ -225,8 +244,7 @@ def _run_predict_stage(
     pipeline.cmd_predict(args)
 
 
-def cmd_production_run(args) -> int:
-    cfg = load_production_config(args.config)
+def _run_single_production_config(cfg: ProductionConfig, args) -> int:
     if not cfg.blast_specificity.required:
         raise PrimerCliError("production run requires blast_specificity.required=true")
     if cfg.blast_specificity.policy_mode != "production":
@@ -290,4 +308,89 @@ def cmd_production_run(args) -> int:
         regions_json=conserved_json,
     )
     logger.info("production[%s]: completed successfully", gene)
+    return 0
+
+
+def _write_batch_summary(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def cmd_production_run(args) -> int:
+    cfg = load_production_config(args.config, gene_name=getattr(args, "gene", None))
+    return _run_single_production_config(cfg, args)
+
+
+def cmd_production_run_batch(args) -> int:
+    batch_cfg = load_multi_gene_config(args.config)
+    batch_log_path = _enable_batch_logging(batch_cfg, args)
+    logger.info(
+        "production-batch[%s]: started config=%s root_dir=%s genes=%s log_file=%s",
+        batch_cfg.project.name,
+        batch_cfg.config_path,
+        batch_cfg.runtime.root_dir,
+        [job.gene for job in batch_cfg.genes],
+        batch_log_path,
+    )
+
+    succeeded: list[dict[str, object]] = []
+    failed: list[dict[str, object]] = []
+    for gene_job in batch_cfg.genes:
+        gene_cfg = build_gene_production_config(batch_cfg, gene_job)
+        try:
+            _run_single_production_config(gene_cfg, args)
+            succeeded.append(
+                {
+                    "gene": gene_job.gene,
+                    "output_dir": str(gene_cfg.runtime.output_dir),
+                    "reports_dir": str(gene_cfg.runtime.reports_dir),
+                    "blast_db": str(gene_cfg.specificity_db.out_prefix),
+                }
+            )
+        except Exception as exc:
+            logger.exception("production-batch[%s]: gene %s failed", batch_cfg.project.name, gene_job.gene)
+            failed.append(
+                {
+                    "gene": gene_job.gene,
+                    "error": str(exc),
+                    "output_dir": str(gene_cfg.runtime.output_dir),
+                    "reports_dir": str(gene_cfg.runtime.reports_dir),
+                    "blast_db": str(gene_cfg.specificity_db.out_prefix),
+                }
+            )
+
+    summary = {
+        "project": batch_cfg.project.name,
+        "config_path": str(batch_cfg.config_path),
+        "root_dir": str(batch_cfg.runtime.root_dir),
+        "gene_count": len(batch_cfg.genes),
+        "succeeded_count": len(succeeded),
+        "failed_count": len(failed),
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+    summary_path = batch_cfg.runtime.root_dir / "reports" / "batch_summary.json"
+    _write_batch_summary(summary_path, summary)
+
+    if not succeeded:
+        raise PrimerCliError(
+            "production run-batch finished with no successful genes. "
+            f"See {summary_path} for details."
+        )
+
+    if failed:
+        logger.warning(
+            "production-batch[%s]: partial success succeeded=%d failed=%d summary=%s",
+            batch_cfg.project.name,
+            len(succeeded),
+            len(failed),
+            summary_path,
+        )
+    else:
+        logger.info(
+            "production-batch[%s]: completed successfully for all %d genes summary=%s",
+            batch_cfg.project.name,
+            len(succeeded),
+            summary_path,
+        )
     return 0

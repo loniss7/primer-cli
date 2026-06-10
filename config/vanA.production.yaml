@@ -27,7 +27,6 @@ specificity_db:
   blastdb_version: 5
   parse_seqids: true
   subjects_file: "../runs/production_vana/reports/subjects.tsv"
-  target_loci_file: "../runs/production_vana/reports/target_loci.tsv"
 
   ncbi_datasets:
     assembly_level:
@@ -51,8 +50,8 @@ specificity_db:
   local_fasta:
     - path: "../data/local_negative_panel.fna"
       role: "local_background"
-    # target_context FASTA headers should carry locus annotations, for example:
-    # >ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA
+    # Explicit target reference used for on-target confirmation in production mode.
+    # Coordinate annotations are optional and ignored by the specificity gate.
     - path: "../data/target_gene_contexts.fna"
       role: "target_context"
 
@@ -78,7 +77,7 @@ blast_specificity:
   primer_3p_tail_len: 5
   max_3p_tail_mismatches: 1
   max_3p_tail_gaps: 0
-  require_predicted_on_target_amplicon: true
+  require_predicted_on_target_amplicon: true  # require one predicted amplicon on an explicit target reference
   reject_any_offtarget_amplicon: true
   reject_good_3prime_offtarget_amplicon: true
   pair_pool_size: 50

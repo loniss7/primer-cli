@@ -23,8 +23,8 @@ from primer_cli.services.specificity.target_catalog import load_target_catalog
 def _warn_if_legacy_subject_matching(cfg: BlastSpecificityConfig) -> None:
     if cfg.target_subject_substrings:
         warnings.warn(
-            "BLAST subject substring matching is deprecated; use subjects.tsv and "
-            "target_loci.tsv with locus coordinates instead.",
+            "BLAST subject substring matching is deprecated; use subjects.tsv with "
+            "explicit subject roles instead.",
             DeprecationWarning,
             stacklevel=2,
         )

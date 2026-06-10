@@ -185,14 +185,6 @@ def _run_predict_stage(
                 str(cfg.specificity_db.subjects_file),
             ]
         )
-    if cfg.specificity_db.target_loci_file is not None:
-        argv.extend(
-            [
-                "--blast-target-loci-tsv",
-                str(cfg.specificity_db.target_loci_file),
-            ]
-        )
-
     parser = build_parser()
     args = parser.parse_args(argv)
     pipeline.cmd_predict(args)

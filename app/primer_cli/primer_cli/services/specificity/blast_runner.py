@@ -120,24 +120,12 @@ def validate_blast_specificity_config(cfg: BlastSpecificityConfig) -> None:
             where="BlastSpecificityConfig.subjects_tsv",
             arg_name="subjects_tsv",
         )
-    if cfg.target_loci_tsv:
-        require_file_exists(
-            Path(cfg.target_loci_tsv),
-            where="BlastSpecificityConfig.target_loci_tsv",
-            arg_name="target_loci_tsv",
-        )
     if cfg.policy_mode == "production":
         if not cfg.subjects_tsv:
             raise validation_error(
                 what="subjects_tsv is required in production mode",
                 where="BlastSpecificityConfig.policy_mode",
                 fix="Provide subjects.tsv generated during BLAST DB build.",
-            )
-        if not cfg.target_loci_tsv:
-            raise validation_error(
-                what="target_loci_tsv is required in production mode",
-                where="BlastSpecificityConfig.policy_mode",
-                fix="Provide target_loci.tsv with on-target locus coordinates.",
             )
 
 

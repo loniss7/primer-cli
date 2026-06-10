@@ -96,7 +96,7 @@ def test_production_vana_fake(tmp_path: Path, monkeypatch) -> None:
 
     local_panel = tmp_path / "local_panel.fna"
     local_panel.write_text(
-        ">ctx locus_start=5 locus_end=28 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA\n"
+        ">ctx\n"
         "ACGTACGTACGTACGTACGTACGTACGTACGT\n",
         encoding="utf-8",
     )
@@ -140,7 +140,6 @@ specificity_db:
     - path: "{local_panel.as_posix()}"
       role: "target_context"
   subjects_file: "{(tmp_path / 'reports' / 'subjects.tsv').as_posix()}"
-  target_loci_file: "{(tmp_path / 'reports' / 'target_loci.tsv').as_posix()}"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"

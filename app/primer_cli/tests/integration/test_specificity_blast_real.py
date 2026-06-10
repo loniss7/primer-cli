@@ -87,8 +87,7 @@ def test_specificity_service_with_real_makeblastdb_and_blastn(tmp_path: Path) ->
     target_fasta = tmp_path / "target_context.fna"
     target_fasta.write_text(
         (
-            ">target_ctx locus_start=90 locus_end=210 locus_strand=plus "
-            "locus_id=vanA_ctx_1 gene=vanA\n"
+            ">target_ctx\n"
             + ("A" * 100)
             + forward_seq
             + ("C" * 60)
@@ -138,7 +137,6 @@ specificity_db:
   blastdb_version: 5
   parse_seqids: true
   subjects_file: "{(tmp_path / 'reports' / 'subjects.tsv').as_posix()}"
-  target_loci_file: "{(tmp_path / 'reports' / 'target_loci.tsv').as_posix()}"
   ncbi_datasets:
     assembly_level: []
     target_taxa: []
@@ -191,7 +189,6 @@ blast_specificity:
             task="blastn-short",
             word_size=7,
             subjects_tsv=str(tmp_path / "reports" / "subjects.tsv"),
-            target_loci_tsv=str(tmp_path / "reports" / "target_loci.tsv"),
             policy_mode="production",
             require_predicted_on_target_amplicon=True,
             reject_any_offtarget_amplicon=True,

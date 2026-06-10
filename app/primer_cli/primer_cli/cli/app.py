@@ -303,7 +303,7 @@ def _add_predict_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--blast-target-loci-tsv",
         default="",
-        help="Path to target_loci.tsv with locus-aware on-target coordinates",
+        help="Deprecated no-op retained for backward compatibility",
     )
     sp.add_argument(
         "--blast-target-subject-id",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,38 +65,6 @@ def _write_subjects_file(metadata_tsv: Path, output_path: Path) -> None:
     output_path.write_text(metadata_tsv.read_text(encoding="utf-8"), encoding="utf-8")
 
 
-def _write_target_loci_file(metadata_tsv: Path, output_path: Path) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    target_roles = {"target", "target_context"}
-    with (
-        metadata_tsv.open("r", newline="", encoding="utf-8") as in_fh,
-        output_path.open("w", newline="", encoding="utf-8") as out_fh,
-    ):
-        reader = csv.DictReader(in_fh, delimiter="\t")
-        writer = csv.writer(out_fh, delimiter="\t")
-        writer.writerow(["subject_id", "locus_id", "gene", "start", "end", "strand"])
-        for row in reader:
-            role = str(row.get("role", "")).strip()
-            if role not in target_roles:
-                continue
-
-            start = str(row.get("locus_start", "")).strip()
-            end = str(row.get("locus_end", "")).strip()
-            if not start or not end:
-                continue
-
-            writer.writerow(
-                [
-                    str(row.get("subject_id", "")).strip(),
-                    str(row.get("locus_id", "")).strip(),
-                    str(row.get("gene", "")).strip(),
-                    start,
-                    end,
-                    str(row.get("locus_strand", "")).strip(),
-                ]
-            )
-
-
 def _gene_report_path(cfg: ProductionConfig) -> Path:
     return cfg.runtime.reports_dir / f"report_{cfg.project.target_gene}.json"
 
@@ -153,12 +120,22 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
     logger.info("BLAST DB build: downloading and collecting FASTA sources")
     report["current_stage"] = "download"
     paths = _build_work_paths(cfg)
+    explicit_target_reference = any(
+        item.role in {"target", "target_context"} for item in cfg.specificity_db.local_fasta
+    )
+    target_taxa = cfg.specificity_db.ncbi_datasets.target_taxa
+    if explicit_target_reference and target_taxa:
+        logger.info(
+            "BLAST DB build: skipping target_taxa genome downloads because explicit target "
+            "reference FASTA is provided via specificity_db.local_fasta"
+        )
+        target_taxa = ()
     downloaded = download_ncbi_datasets(
         datasets_bin=cfg.tools.datasets_bin,
         downloads_dir=cfg.runtime.downloads_dir,
         work_dir=cfg.runtime.work_dir,
         assembly_levels=cfg.specificity_db.ncbi_datasets.assembly_level,
-        target_taxa=cfg.specificity_db.ncbi_datasets.target_taxa,
+        target_taxa=target_taxa,
         near_target_taxa=cfg.specificity_db.ncbi_datasets.near_target_taxa,
         background_taxa=cfg.specificity_db.ncbi_datasets.background_taxa,
     )
@@ -218,11 +195,6 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
             _write_subjects_file(
                 paths["metadata_tsv"],
                 cfg.specificity_db.subjects_file,
-            )
-        if cfg.specificity_db.target_loci_file is not None:
-            _write_target_loci_file(
-                paths["metadata_tsv"],
-                cfg.specificity_db.target_loci_file,
             )
         logger.info("BLAST DB build: running makeblastdb")
         report["current_stage"] = "makeblastdb"

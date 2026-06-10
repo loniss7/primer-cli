@@ -1,14 +1,15 @@
 # BLAST specificity v2
 
 BLAST specificity is a mandatory stage of primer-pair validation. The v2 flow is
-locus-aware and does not treat an entire genome subject as on-target.
+driven by explicit target-reference subjects and does not depend on stored locus
+coordinates.
 
 The v2 workflow is:
 
 1. compute a pre-BLAST score for candidate primer pairs
 2. reorder the pool with a diversity-biased selection pass
 3. BLAST only the top-K unique primer sequences from the current pool
-4. classify every hit with `subjects.tsv` and `target_loci.tsv`
+4. classify every hit with `subjects.tsv`
 5. reconstruct predicted amplicons only when both binding sites are amplifiable
 6. expand the candidate pool automatically when too few pairs pass specificity
 7. apply policy statuses: `PASSED`, `PASSED_WITH_WARNINGS`, `REJECTED`, `UNRESOLVED`
@@ -16,22 +17,24 @@ The v2 workflow is:
 
 `primer-cli run` and `primer-cli predict` require `--blast-db`.
 
-## Locus-aware metadata
+## Target-reference metadata
 
-BLAST DB builds can emit two tabular metadata files:
+BLAST DB builds emit one required tabular metadata file:
 
 - `subjects.tsv`: one row per subject with role/source metadata
-- `target_loci.tsv`: one row per on-target locus with `subject_id`, `locus_id`, `gene`,
-  `start`, `end`, and `strand`
 
-Target-context FASTA headers can include locus annotations such as:
+Production mode also expects at least one explicit target reference FASTA in
+`specificity_db.local_fasta` with role `target` or `target_context`.
+
+Target-context FASTA headers may include free-form annotations such as:
 
 ```text
->ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=gene_ctx_1 gene=gene
+>ctx_001 gene=gene source=curated_target_reference
 ```
 
-In `production` policy mode, `subjects.tsv` and `target_loci.tsv` are mandatory. The
-service runs fail-closed and does not silently fall back to subject-level matching.
+In `production` policy mode, `subjects.tsv` and an explicit target reference FASTA are
+mandatory. The service runs fail-closed and does not silently fall back to substring
+matching.
 
 Legacy fallbacks remain available for exploratory work:
 
@@ -44,6 +47,7 @@ Legacy fallbacks remain available for exploratory work:
 A predicted amplicon is counted only when:
 
 - both hits belong to the same subject
+- that subject is classified as `target` or `target_context` for on-target confirmation
 - hits are on opposite strands
 - the 3' ends face inward
 - amplicon length is within configured bounds

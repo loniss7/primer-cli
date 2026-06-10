@@ -78,7 +78,6 @@ specificity_db:
   blastdb_version: 5
   parse_seqids: true
   subjects_file: "{(tmp_path / 'reports' / 'subjects.tsv').as_posix()}"
-  target_loci_file: "{(tmp_path / 'reports' / 'target_loci.tsv').as_posix()}"
   ncbi_datasets:
     assembly_level: []
 {target_taxa_section}
@@ -176,11 +175,21 @@ print('Database: fake_panel')
 """.strip(),
     )
 
+    target_fasta = tmp_path / "target_context.fna"
+    target_fasta.write_text(
+        ">target_ctx\nACGTACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
+
     cfg = _blastdb_config(
         tmp_path=tmp_path,
         datasets=datasets,
         makeblastdb=makeblastdb,
         blastdbcmd=blastdbcmd,
+        local_fasta=(
+            f'    - path: "{target_fasta.as_posix()}"\n'
+            '      role: "target_context"\n'
+        ),
         target_taxa=["Good taxon"],
         background_taxa=["Bad taxon"],
     )
@@ -269,11 +278,21 @@ raise SystemExit(0)
 """.strip(),
     )
 
+    target_fasta = tmp_path / "target_context.fna"
+    target_fasta.write_text(
+        ">target_ctx\nACGTACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
+
     cfg = _blastdb_config(
         tmp_path=tmp_path,
         datasets=datasets,
         makeblastdb=makeblastdb,
         blastdbcmd=blastdbcmd,
+        local_fasta=(
+            f'    - path: "{target_fasta.as_posix()}"\n'
+            '      role: "target_context"\n'
+        ),
         target_taxa=["Bad taxon"],
         background_taxa=[],
     )

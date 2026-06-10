@@ -35,13 +35,14 @@ specificity_db:
   blastdb_version: 5
   parse_seqids: true
   subjects_file: "data/subjects.tsv"
-  target_loci_file: "data/target_loci.tsv"
   ncbi_datasets:
     assembly_level: []
     target_taxa: []
     near_target_taxa: []
     background_taxa: []
-  local_fasta: []
+  local_fasta:
+    - path: "data/target_context.fna"
+      role: "target_context"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"
@@ -78,7 +79,7 @@ blast_specificity:
     assert cfg.project.target_gene == "vanA"
     assert cfg.specificity_db.out_prefix == (tmp_path / "blastdb" / "vanA_panel").resolve()
     assert cfg.specificity_db.subjects_file == (tmp_path / "data" / "subjects.tsv").resolve()
-    assert cfg.specificity_db.target_loci_file == (tmp_path / "data" / "target_loci.tsv").resolve()
+    assert cfg.specificity_db.target_loci_file is None
     assert cfg.design.top_n == 20
     assert cfg.blast_specificity.policy_mode == "production"
 
@@ -110,9 +111,10 @@ specificity_db:
   blastdb_version: 5
   parse_seqids: true
   subjects_file: "data/subjects.tsv"
-  target_loci_file: "data/target_loci.tsv"
   ncbi_datasets: {}
-  local_fasta: []
+  local_fasta:
+    - path: "data/target_context.fna"
+      role: "target_context"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"
@@ -148,8 +150,8 @@ blast_specificity:
         load_production_config(cfg_path)
 
 
-def test_load_production_config_requires_target_loci_file_in_production_mode(tmp_path: Path) -> None:
-    cfg_path = tmp_path / "missing_target_loci.yaml"
+def test_load_production_config_requires_explicit_target_reference_in_production_mode(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "missing_target_reference.yaml"
     cfg_path.write_text(
         """
 project:
@@ -208,5 +210,5 @@ blast_specificity:
         encoding="utf-8",
     )
 
-    with pytest.raises(PrimerCliError, match="target_loci_file"):
+    with pytest.raises(PrimerCliError, match="target reference FASTA"):
         load_production_config(cfg_path)

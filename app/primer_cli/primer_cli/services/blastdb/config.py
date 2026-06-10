@@ -195,6 +195,10 @@ def _load_local_fasta(base_dir: Path, raw: Any) -> tuple[LocalFastaSourceConfig,
     return tuple(out)
 
 
+def _has_explicit_target_reference(local_fasta: tuple[LocalFastaSourceConfig, ...]) -> bool:
+    return any(source.role in {"target", "target_context"} for source in local_fasta)
+
+
 def _load_ncbi_datasets(raw: Any) -> NCBIDatasetsConfig:
     mapping = _expect_mapping(raw or {}, where="specificity_db.ncbi_datasets")
     return NCBIDatasetsConfig(
@@ -446,11 +450,19 @@ def load_production_config(path: str | Path) -> ProductionConfig:
                 where="specificity_db.subjects_file",
                 fix="Configure a subjects.tsv output path for the BLAST DB build.",
             )
-        if specificity_db.target_loci_file is None:
+        if blast_specificity.require_predicted_on_target_amplicon and not _has_explicit_target_reference(
+            specificity_db.local_fasta
+        ):
             raise validation_error(
-                what="specificity_db.target_loci_file is required in production mode",
-                where="specificity_db.target_loci_file",
-                fix="Configure a target_loci.tsv output path for the BLAST DB build.",
+                what=(
+                    "production mode requires an explicit target reference FASTA in "
+                    "specificity_db.local_fasta with role 'target' or 'target_context'"
+                ),
+                where="specificity_db.local_fasta",
+                fix=(
+                    "Add a local FASTA containing the target gene or target context and set "
+                    "its role to 'target' or 'target_context'."
+                ),
             )
 
     return ProductionConfig(

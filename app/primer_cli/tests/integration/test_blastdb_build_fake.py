@@ -54,7 +54,7 @@ def test_blastdb_build_fake(tmp_path: Path) -> None:
 
     local_fasta = tmp_path / "local.fna"
     local_fasta.write_text(
-        ">x locus_start=3 locus_end=14 locus_strand=plus locus_id=vanA_ctx_1 gene=vanA\n"
+        ">x\n"
         "ACGTACGTACGTACGT\n",
         encoding="utf-8",
     )
@@ -92,7 +92,6 @@ specificity_db:
     - path: "{local_fasta.as_posix()}"
       role: "target_context"
   subjects_file: "{(tmp_path / 'data' / 'subjects.tsv').as_posix()}"
-  target_loci_file: "{(tmp_path / 'data' / 'target_loci.tsv').as_posix()}"
 design:
   max_sequences: 10
   mafft_args: "--auto --nuc"
@@ -130,4 +129,3 @@ blast_specificity:
     manifest = tmp_path / "blastdb" / "vanA_panel.manifest.json"
     assert manifest.exists()
     assert (tmp_path / "data" / "subjects.tsv").exists()
-    assert (tmp_path / "data" / "target_loci.tsv").exists()

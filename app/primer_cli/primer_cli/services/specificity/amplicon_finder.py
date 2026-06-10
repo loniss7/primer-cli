@@ -16,16 +16,9 @@ def _classify_amplicon_target_status(
         )
 
     if forward_hit.target_status == "on_target" and reverse_hit.target_status == "on_target":
-        if forward_hit.target_locus_id and forward_hit.target_locus_id == reverse_hit.target_locus_id:
-            return (
-                "on_target",
-                "shared_target_locus",
-                forward_hit.target_locus_id,
-                forward_hit.target_locus_gene or reverse_hit.target_locus_gene,
-            )
         return (
-            "off_target",
-            "different_target_loci",
+            "on_target",
+            "shared_target_subject",
             "",
             "",
         )

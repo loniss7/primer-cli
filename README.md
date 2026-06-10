@@ -21,7 +21,7 @@ For production runs, BLAST specificity v2 is added:
 6. expand the candidate pool automatically if needed;
 7. apply final scoring and policy evaluation.
 
-Production specificity is locus-aware. The full subject is not treated as on-target by substring matching; the DB must have `subjects.tsv` and `target_loci.tsv`.
+Production specificity confirms on-target amplicons against an explicit target reference subject. The DB must have `subjects.tsv`, and production mode must include at least one `local_fasta` entry with role `target` or `target_context`.
 
 ## Inputs
 
@@ -40,13 +40,13 @@ For a production gene run you also need:
 - `datasets`, `makeblastdb`, `blastdbcmd`, `blastn`;
 - NCBI taxon lists;
 - optional local FASTA files;
-- `subjects.tsv` and `target_loci.tsv`;
-- locus annotations in `target_context` FASTA headers if those records are used.
+- `subjects.tsv`;
+- at least one explicit target reference FASTA with role `target` or `target_context`.
 
-Example target-context header:
+Example target-reference header:
 
 ```text
->ctx_001 locus_start=90 locus_end=210 locus_strand=plus locus_id=gene_ctx_1 gene=gene
+>ctx_001 gene=gene source=curated_target_reference
 ```
 
 ## Gene Config
@@ -58,7 +58,7 @@ Main sections:
 - `project` - project name, target gene, config version.
 - `runtime` - work/output/reports/downloads directories.
 - `tools` - paths to `datasets`, `mafft`, `blastn`, `makeblastdb`, `blastdbcmd`.
-- `specificity_db` - BLAST DB prefix, NCBI sources, local FASTA files, `subjects.tsv`, `target_loci.tsv`.
+- `specificity_db` - BLAST DB prefix, NCBI sources, local FASTA files, and `subjects.tsv`.
 - `design` - conserved-window and candidate-count settings.
 - `blast_specificity` - specificity thresholds, policy mode, pool sizes, BLAST settings.
 
@@ -80,7 +80,6 @@ runtime:
 specificity_db:
   out_prefix: "../../blastdb/gene_specificity_panel"
   subjects_file: "../../reports/production_gene/subjects.tsv"
-  target_loci_file: "../../reports/production_gene/target_loci.tsv"
   ncbi_datasets:
     target_taxa:
       - "Enterococcus faecium"
@@ -106,9 +105,9 @@ blast_specificity:
 
 Important:
 
-- `subjects_file` and `target_loci_file` are mandatory in `production` mode;
+- `subjects_file` is mandatory in `production` mode;
 - `policy_mode` must be `production`;
-- `target_context` FASTA headers must include locus coordinates;
+- at least one `local_fasta` entry with role `target` or `target_context` is required when `require_predicted_on_target_amplicon: true`;
 - subject substring matching is deprecated and is only meant for exploratory work.
 
 ## How To Run a Gene
@@ -150,7 +149,7 @@ The production config is `config/examples/gene.production.yaml`. That file shows
 
 - input sources in `specificity_db.ncbi_datasets`;
 - local FASTA panels in `specificity_db.local_fasta`;
-- required production metadata files `subjects_file` and `target_loci_file`;
+- required production metadata file `subjects_file`;
 - production BLAST policy in `blast_specificity`;
 - production runtime paths in `runtime`.
 
@@ -168,7 +167,7 @@ What `primer-cli production run` does:
    - diversity-biased pair ordering;
    - BLAST on top-K unique primers;
    - automatic pool expansion if needed;
-   - locus-aware policy evaluation;
+   - subject-level target-reference policy evaluation;
 9. writes final reports.
 
 Example production command:
@@ -191,7 +190,6 @@ The key outputs for a production run land in:
 - `reports/production_gene/gene_fetch_qc.json`
 - `reports/production_gene/report_gene.json`
 - `reports/production_gene/subjects.tsv`
-- `reports/production_gene/target_loci.tsv`
 - `blastdb/gene_specificity_panel*`
 
 Intermediate data lives in:

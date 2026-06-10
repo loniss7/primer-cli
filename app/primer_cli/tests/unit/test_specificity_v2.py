@@ -71,7 +71,7 @@ def _make_on_target_amplicon() -> PredictedAmplicon:
         subject_id="lcl|subject_1",
         subject_role="target_context",
         target_status="on_target",
-        reason="shared_target_locus",
+        reason="shared_target_subject",
         target_locus_id="vanA_locus_1",
         target_locus_gene="vanA",
         forward_strand="plus",
@@ -128,63 +128,49 @@ def test_parse_blast_line_tracks_partial_query_coverage() -> None:
     assert hit.qend == 20
 
 
-def test_target_catalog_is_locus_aware(tmp_path: Path) -> None:
+def test_target_catalog_is_subject_role_aware(tmp_path: Path) -> None:
     subjects_tsv = tmp_path / "subjects.tsv"
-    target_loci_tsv = tmp_path / "target_loci.tsv"
     subjects_tsv.write_text(
         "subject_id\torganism\ttaxid\trole\tsource\tsource_file\n"
         "lcl|subject_1\tEnterococcus faecium\t\ttarget_context\tLocal\tpanel.fna\n"
         "lcl|subject_2\tStaphylococcus aureus\t\tbackground\tLocal\tpanel.fna\n",
         encoding="utf-8",
     )
-    target_loci_tsv.write_text(
-        "subject_id\tlocus_id\tgene\tstart\tend\tstrand\n"
-        "lcl|subject_1\tvanA_locus_1\tvanA\t100\t300\tplus\n",
-        encoding="utf-8",
-    )
     cfg = BlastSpecificityConfig(
         blast_db="dummy_db",
         subjects_tsv=str(subjects_tsv),
-        target_loci_tsv=str(target_loci_tsv),
     )
 
     catalog = load_target_catalog(cfg)
-    inside = catalog.classify(
+    target_hit = catalog.classify(
         subject_id="lcl|subject_1",
         hit_start=120,
         hit_end=139,
         policy_mode="exploratory",
     )
-    outside = catalog.classify(
-        subject_id="lcl|subject_1",
+    background_hit = catalog.classify(
+        subject_id="lcl|subject_2",
         hit_start=400,
         hit_end=419,
         policy_mode="exploratory",
     )
 
-    assert inside.target_status == "on_target"
-    assert inside.reason == "overlaps_target_locus"
-    assert outside.target_status == "off_target"
-    assert outside.reason == "outside_target_locus"
+    assert target_hit.target_status == "on_target"
+    assert target_hit.reason == "target_subject_role"
+    assert background_hit.target_status == "off_target"
+    assert background_hit.reason == "background_subject"
 
 
 def test_target_catalog_matches_lcl_subject_aliases(tmp_path: Path) -> None:
     subjects_tsv = tmp_path / "subjects.tsv"
-    target_loci_tsv = tmp_path / "target_loci.tsv"
     subjects_tsv.write_text(
         "subject_id\torganism\ttaxid\trole\tsource\tsource_file\n"
         "lcl|subject_1\tEnterococcus faecium\t\ttarget_context\tLocal\tpanel.fna\n",
         encoding="utf-8",
     )
-    target_loci_tsv.write_text(
-        "subject_id\tlocus_id\tgene\tstart\tend\tstrand\n"
-        "lcl|subject_1\tvanA_locus_1\tvanA\t100\t300\tplus\n",
-        encoding="utf-8",
-    )
     cfg = BlastSpecificityConfig(
         blast_db="dummy_db",
         subjects_tsv=str(subjects_tsv),
-        target_loci_tsv=str(target_loci_tsv),
     )
 
     catalog = load_target_catalog(cfg)
@@ -196,20 +182,19 @@ def test_target_catalog_matches_lcl_subject_aliases(tmp_path: Path) -> None:
     )
 
     assert assessment.target_status == "on_target"
-    assert assessment.locus_id == "vanA_locus_1"
+    assert assessment.reason == "target_subject_role"
 
 
-def test_target_catalog_is_fail_closed_in_production_when_locus_missing(tmp_path: Path) -> None:
+def test_target_catalog_legacy_subject_id_fallback_is_on_target_in_production(tmp_path: Path) -> None:
     subjects_tsv = tmp_path / "subjects.tsv"
     subjects_tsv.write_text(
-        "subject_id\torganism\ttaxid\trole\tsource\tsource_file\n"
-        "lcl|subject_1\tEnterococcus faecium\t\ttarget_context\tLocal\tpanel.fna\n",
+        "subject_id\torganism\ttaxid\trole\tsource\tsource_file\n",
         encoding="utf-8",
     )
     cfg = BlastSpecificityConfig(
         blast_db="dummy_db",
         subjects_tsv=str(subjects_tsv),
-        target_loci_tsv="",
+        target_subject_ids=("subject_1",),
         policy_mode="production",
     )
 
@@ -221,8 +206,8 @@ def test_target_catalog_is_fail_closed_in_production_when_locus_missing(tmp_path
         policy_mode="production",
     )
 
-    assert assessment.target_status == "unresolved"
-    assert assessment.reason == "target_subject_missing_locus_coordinates"
+    assert assessment.target_status == "on_target"
+    assert assessment.reason == "legacy_target_subject_id_fallback"
 
 
 def test_predict_amplicon_requires_inward_facing_3prime_ends() -> None:

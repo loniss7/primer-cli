@@ -34,6 +34,7 @@ def _blastdb_config(
     local_fasta: str = "",
     target_taxa: list[str] | None = None,
     background_taxa: list[str] | None = None,
+    require_predicted_on_target_amplicon: bool = True,
 ) -> Path:
     target_taxa = target_taxa or []
     background_taxa = background_taxa or []
@@ -105,7 +106,7 @@ blast_specificity:
   primer_3p_tail_len: 5
   max_3p_tail_mismatches: 1
   max_3p_tail_gaps: 0
-  require_predicted_on_target_amplicon: true
+  require_predicted_on_target_amplicon: {"true" if require_predicted_on_target_amplicon else "false"}
   reject_any_offtarget_amplicon: true
   reject_good_3prime_offtarget_amplicon: true
   pair_pool_size: 50
@@ -278,23 +279,15 @@ raise SystemExit(0)
 """.strip(),
     )
 
-    target_fasta = tmp_path / "target_context.fna"
-    target_fasta.write_text(
-        ">target_ctx\nACGTACGTACGTACGTACGT\n",
-        encoding="utf-8",
-    )
-
     cfg = _blastdb_config(
         tmp_path=tmp_path,
         datasets=datasets,
         makeblastdb=makeblastdb,
         blastdbcmd=blastdbcmd,
-        local_fasta=(
-            f'    - path: "{target_fasta.as_posix()}"\n'
-            '      role: "target_context"\n'
-        ),
+        local_fasta="",
         target_taxa=["Bad taxon"],
         background_taxa=[],
+        require_predicted_on_target_amplicon=False,
     )
 
     monkeypatch.setattr(
@@ -326,3 +319,111 @@ raise SystemExit(0)
     assert report["status"] == "failed"
     assert report["blastdb"]["status"] == "failed"
     assert not (tmp_path / "out" / "top_primers.csv").exists()
+
+
+def test_blastdb_build_reuses_existing_archives_and_unpacked_taxa_across_configs(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    downloads_log = tmp_path / "datasets_calls.log"
+
+    datasets = _make_fake_tool(
+        bin_dir,
+        "datasets",
+        "fake_datasets.py",
+        f"""
+import sys
+from pathlib import Path
+from zipfile import ZipFile
+
+args = sys.argv[1:]
+if any(a in ('--version', '-version', 'version', '--help') for a in args):
+    print('datasets fake 1.0')
+    raise SystemExit(0)
+
+zip_path = Path(args[args.index('--filename') + 1])
+taxon = args[args.index('taxon') + 1]
+zip_path.parent.mkdir(parents=True, exist_ok=True)
+with ZipFile(zip_path, 'w') as zf:
+    zf.writestr(f'{{taxon.replace(" ", "_")}}.fna', f'>{{taxon.replace(" ", "_")}}\\nACGTACGTACGTACGTACGT\\n')
+with Path(r"{downloads_log.as_posix()}").open('a', encoding='utf-8') as fh:
+    fh.write(taxon + '\\n')
+print('datasets ok')
+""".strip(),
+    )
+    makeblastdb = _make_fake_tool(
+        bin_dir,
+        "makeblastdb",
+        "fake_makeblastdb.py",
+        """
+import sys
+args = sys.argv[1:]
+if any(a in ('--version', '-version', 'version', '--help') for a in args):
+    print('makeblastdb fake 1.0')
+    raise SystemExit(0)
+out = args[args.index('-out') + 1]
+open(out + '.nin', 'w', encoding='utf-8').write('fake')
+print('makeblastdb ok')
+""".strip(),
+    )
+    blastdbcmd = _make_fake_tool(
+        bin_dir,
+        "blastdbcmd",
+        "fake_blastdbcmd.py",
+        """
+import sys
+args = sys.argv[1:]
+if any(a in ('--version', '-version', 'version', '--help') for a in args):
+    print('blastdbcmd fake 1.0')
+    raise SystemExit(0)
+print('Database: fake_panel')
+""".strip(),
+    )
+
+    shared_root = tmp_path / "runs_shared"
+    target_fasta = tmp_path / "target_context.fna"
+    target_fasta.write_text(
+        ">target_ctx\nACGTACGTACGTACGTACGT\n",
+        encoding="utf-8",
+    )
+    (shared_root / "vanA").mkdir(parents=True, exist_ok=True)
+    (shared_root / "vanB").mkdir(parents=True, exist_ok=True)
+
+    cfg_a = _blastdb_config(
+        tmp_path=shared_root / "vanA",
+        datasets=datasets,
+        makeblastdb=makeblastdb,
+        blastdbcmd=blastdbcmd,
+        local_fasta=(
+            f'    - path: "{target_fasta.as_posix()}"\n'
+            '      role: "target_context"\n'
+        ),
+        target_taxa=[],
+        background_taxa=["Taxon one", "Taxon two"],
+    )
+    cfg_b = _blastdb_config(
+        tmp_path=shared_root / "vanB",
+        datasets=datasets,
+        makeblastdb=makeblastdb,
+        blastdbcmd=blastdbcmd,
+        local_fasta=(
+            f'    - path: "{target_fasta.as_posix()}"\n'
+            '      role: "target_context"\n'
+        ),
+        target_taxa=[],
+        background_taxa=["Taxon one", "Taxon two", "Taxon three"],
+    )
+
+    assert cmd_blastdb_build(SimpleNamespace(config=str(cfg_a))) == 0
+    assert downloads_log.read_text(encoding="utf-8").splitlines() == ["Taxon one", "Taxon two"]
+
+    assert cmd_blastdb_build(SimpleNamespace(config=str(cfg_b))) == 0
+    assert downloads_log.read_text(encoding="utf-8").splitlines() == [
+        "Taxon one",
+        "Taxon two",
+        "Taxon three",
+    ]
+
+    report = json.loads((shared_root / "vanB" / "reports" / "report_vanA.json").read_text(encoding="utf-8"))
+    downloaded_taxa = [row["taxon"] for row in report["blastdb"]["downloaded_batches"]]
+    assert downloaded_taxa == ["Taxon one", "Taxon two", "Taxon three"]
+    assert report["status"] == "complete"

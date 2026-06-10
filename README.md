@@ -37,7 +37,9 @@ Multi-gene режим нужен, когда вы хотите прогнать 
 
 - `project.name`, `project.version` — общие metadata batch-запуска.
 - `runtime.root_dir` — общий корень, под которым автоматически создаются:
-  `work/<gene>`, `out/<gene>`, `reports/<gene>`, `downloads/<gene>`, `blastdb/<gene>_specificity_panel`.
+  `work/<gene>`, `out/<gene>`, `reports/<gene>`, `blastdb/<gene>_specificity_panel`.
+- `runtime.shared_downloads_dir` — общий каталог ZIP-архивов NCBI Datasets для всех генов batch-запуска.
+- `runtime.shared_unpack_dir` — общий каталог распакованных NCBI Datasets для всех генов batch-запуска.
 - `tools` — пути к `datasets`, `mafft`, `blastn`, `makeblastdb`, `blastdbcmd`.
 - `genes[]` — отдельная настройка на каждый ген.
 
@@ -50,6 +52,7 @@ Multi-gene режим нужен, когда вы хотите прогнать 
 - `blast_specificity` — policy и BLAST thresholds именно этого гена.
 
 `out_prefix` и `subjects_file` в multi-gene конфиге можно не указывать: они вычисляются автоматически из `runtime.root_dir`.
+Если у нескольких генов есть общие таксоны, указывайте `runtime.shared_downloads_dir` и `runtime.shared_unpack_dir`, а `specificity_db.out_prefix` оставляйте отдельным для каждого гена.
 
 ## Как запускать
 

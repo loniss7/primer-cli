@@ -93,6 +93,7 @@ def download_ncbi_datasets(
     datasets_bin: str,
     downloads_dir: Path,
     work_dir: Path,
+    unpack_root_dir: Path | None = None,
     assembly_levels: tuple[str, ...],
     target_taxa: tuple[str, ...],
     near_target_taxa: tuple[str, ...],
@@ -100,6 +101,8 @@ def download_ncbi_datasets(
 ) -> list[DownloadedTaxonBatch]:
     downloads_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
+    effective_unpack_root = (unpack_root_dir or (work_dir / "datasets_unpack")).resolve()
+    effective_unpack_root.mkdir(parents=True, exist_ok=True)
 
     plan: list[tuple[str, str]] = []
     for taxon in target_taxa:
@@ -113,8 +116,8 @@ def download_ncbi_datasets(
     for idx, (taxon, role) in enumerate(plan, start=1):
         taxon_slug = "".join(ch if ch.isalnum() else "_" for ch in taxon).strip("_") or f"taxon_{idx}"
         zip_path = downloads_dir / f"{idx:03d}_{taxon_slug}.zip"
-        unpack_dir = work_dir / "datasets_unpack" / f"{idx:03d}_{taxon_slug}"
-        search_roots = _candidate_search_roots(downloads_dir, work_dir)
+        unpack_dir = effective_unpack_root / f"{idx:03d}_{taxon_slug}"
+        search_roots = _candidate_search_roots(downloads_dir, effective_unpack_root, work_dir)
 
         try:
             chosen_zip_path = _find_existing_zip(search_roots, taxon_slug, zip_path)

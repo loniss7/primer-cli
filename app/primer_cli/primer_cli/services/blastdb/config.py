@@ -30,6 +30,7 @@ class RuntimeConfig:
     output_dir: Path
     reports_dir: Path
     downloads_dir: Path
+    datasets_unpack_dir: Path
     test_data_dir: Path | None = None
 
 
@@ -126,6 +127,8 @@ class BatchProjectConfig:
 class BatchRuntimeConfig:
     ncbi_email: str
     root_dir: Path
+    shared_downloads_dir: Path | None = None
+    shared_unpack_dir: Path | None = None
     test_data_dir: Path | None = None
 
 
@@ -293,12 +296,18 @@ def _load_tools(raw: Any) -> ToolsConfig:
 
 def _load_runtime(base_dir: Path, raw: Any) -> RuntimeConfig:
     mapping = _expect_mapping(raw, where="runtime")
+    work_dir = _resolve_path(base_dir, mapping.get("work_dir"), where="runtime.work_dir")
     return RuntimeConfig(
         ncbi_email=_expect_string(mapping.get("ncbi_email"), where="runtime.ncbi_email"),
-        work_dir=_resolve_path(base_dir, mapping.get("work_dir"), where="runtime.work_dir"),
+        work_dir=work_dir,
         output_dir=_resolve_path(base_dir, mapping.get("output_dir"), where="runtime.output_dir"),
         reports_dir=_resolve_path(base_dir, mapping.get("reports_dir"), where="runtime.reports_dir"),
         downloads_dir=_resolve_path(base_dir, mapping.get("downloads_dir"), where="runtime.downloads_dir"),
+        datasets_unpack_dir=(
+            _resolve_path(base_dir, mapping.get("datasets_unpack_dir"), where="runtime.datasets_unpack_dir")
+            if mapping.get("datasets_unpack_dir")
+            else (work_dir / "datasets_unpack").resolve()
+        ),
         test_data_dir=(
             _resolve_path(base_dir, mapping.get("test_data_dir"), where="runtime.test_data_dir")
             if mapping.get("test_data_dir")
@@ -312,6 +321,16 @@ def _load_batch_runtime(base_dir: Path, raw: Any) -> BatchRuntimeConfig:
     return BatchRuntimeConfig(
         ncbi_email=_expect_string(mapping.get("ncbi_email"), where="runtime.ncbi_email"),
         root_dir=_resolve_path(base_dir, mapping.get("root_dir"), where="runtime.root_dir"),
+        shared_downloads_dir=(
+            _resolve_path(base_dir, mapping.get("shared_downloads_dir"), where="runtime.shared_downloads_dir")
+            if mapping.get("shared_downloads_dir")
+            else None
+        ),
+        shared_unpack_dir=(
+            _resolve_path(base_dir, mapping.get("shared_unpack_dir"), where="runtime.shared_unpack_dir")
+            if mapping.get("shared_unpack_dir")
+            else None
+        ),
         test_data_dir=(
             _resolve_path(base_dir, mapping.get("test_data_dir"), where="runtime.test_data_dir")
             if mapping.get("test_data_dir")
@@ -559,12 +578,22 @@ def _sanitize_gene_slug(gene: str) -> str:
 def _build_gene_runtime(batch_runtime: BatchRuntimeConfig, gene: str) -> RuntimeConfig:
     slug = _sanitize_gene_slug(gene)
     root = batch_runtime.root_dir
+    work_dir = (root / "work" / slug).resolve()
     return RuntimeConfig(
         ncbi_email=batch_runtime.ncbi_email,
-        work_dir=(root / "work" / slug).resolve(),
+        work_dir=work_dir,
         output_dir=(root / "out" / slug).resolve(),
         reports_dir=(root / "reports" / slug).resolve(),
-        downloads_dir=(root / "downloads" / slug).resolve(),
+        downloads_dir=(
+            batch_runtime.shared_downloads_dir.resolve()
+            if batch_runtime.shared_downloads_dir is not None
+            else (root / "downloads" / slug).resolve()
+        ),
+        datasets_unpack_dir=(
+            batch_runtime.shared_unpack_dir.resolve()
+            if batch_runtime.shared_unpack_dir is not None
+            else (work_dir / "datasets_unpack").resolve()
+        ),
         test_data_dir=batch_runtime.test_data_dir,
     )
 

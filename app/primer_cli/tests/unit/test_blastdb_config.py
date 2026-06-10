@@ -82,6 +82,7 @@ blast_specificity:
     assert cfg.specificity_db.target_loci_file is None
     assert cfg.design.top_n == 20
     assert cfg.blast_specificity.policy_mode == "production"
+    assert cfg.runtime.datasets_unpack_dir == (tmp_path / "work" / "datasets_unpack").resolve()
 
 
 def test_load_production_config_requires_project_name(tmp_path: Path) -> None:
@@ -224,6 +225,8 @@ project:
 runtime:
   ncbi_email: "team@example.org"
   root_dir: "runs/batch"
+  shared_downloads_dir: "cache/downloads"
+  shared_unpack_dir: "cache/datasets_unpack"
 tools:
   datasets_bin: "datasets"
   mafft_bin: "mafft"
@@ -284,7 +287,8 @@ genes:
     assert gene_job.runtime.work_dir == (tmp_path / "runs" / "batch" / "work" / "gene1").resolve()
     assert gene_job.runtime.output_dir == (tmp_path / "runs" / "batch" / "out" / "gene1").resolve()
     assert gene_job.runtime.reports_dir == (tmp_path / "runs" / "batch" / "reports" / "gene1").resolve()
-    assert gene_job.runtime.downloads_dir == (tmp_path / "runs" / "batch" / "downloads" / "gene1").resolve()
+    assert gene_job.runtime.downloads_dir == (tmp_path / "cache" / "downloads").resolve()
+    assert gene_job.runtime.datasets_unpack_dir == (tmp_path / "cache" / "datasets_unpack").resolve()
     assert gene_job.specificity_db.out_prefix == (
         tmp_path / "runs" / "batch" / "blastdb" / "gene1_specificity_panel"
     ).resolve()
@@ -303,6 +307,8 @@ project:
 runtime:
   ncbi_email: "team@example.org"
   root_dir: "runs/batch"
+  shared_downloads_dir: "cache/downloads"
+  shared_unpack_dir: "cache/datasets_unpack"
 tools:
   datasets_bin: "datasets"
   mafft_bin: "mafft"
@@ -394,6 +400,8 @@ genes:
     assert cfg.project.target_gene == "gene2"
     assert cfg.fetch_query is None
     assert cfg.runtime.output_dir == (tmp_path / "runs" / "batch" / "out" / "gene2").resolve()
+    assert cfg.runtime.downloads_dir == (tmp_path / "cache" / "downloads").resolve()
+    assert cfg.runtime.datasets_unpack_dir == (tmp_path / "cache" / "datasets_unpack").resolve()
     assert cfg.specificity_db.out_prefix == (
         tmp_path / "runs" / "batch" / "blastdb" / "gene2_specificity_panel"
     ).resolve()
@@ -409,6 +417,7 @@ project:
 runtime:
   ncbi_email: "team@example.org"
   root_dir: "runs/batch"
+  shared_downloads_dir: "cache/downloads"
 tools:
   datasets_bin: "datasets"
   mafft_bin: "mafft"

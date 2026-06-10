@@ -25,7 +25,7 @@ Production-контур добавляет:
 - single-gene: один `project.target_gene`, явные `runtime.work_dir/output_dir/reports_dir/downloads_dir`;
 - multi-gene: общий `runtime.root_dir` и список `genes`, где у каждого гена свои `fetch`, `specificity_db`, `design`, `blast_specificity`.
 
-Multi-gene режим нужен, когда вы хотите прогнать несколько генов одним запуском и при этом оставить для каждого свои таксоны, target-context FASTA и пороги специфичности.
+Multi-gene режим нужен, когда вы хотите прогнать несколько генов одним запуском и при этом оставить для каждого свои таксоны и пороги специфичности.
 
 ## Multi-gene конфиг
 
@@ -53,6 +53,7 @@ Multi-gene режим нужен, когда вы хотите прогнать 
 
 `out_prefix` и `subjects_file` в multi-gene конфиге можно не указывать: они вычисляются автоматически из `runtime.root_dir`.
 Если у нескольких генов есть общие таксоны, указывайте `runtime.shared_downloads_dir` и `runtime.shared_unpack_dir`, а `specificity_db.out_prefix` оставляйте отдельным для каждого гена.
+Если `blast_specificity.require_predicted_on_target_amplicon: false`, `specificity_db.local_fasta` может быть пустым: тогда пайплайн работает как off-target-only проверка без локального target reference.
 
 ## Как запускать
 

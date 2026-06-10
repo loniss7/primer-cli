@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import shutil
 from types import SimpleNamespace
 
 from primer_cli.core.logging import build_log_file_path, enable_file_logging
@@ -13,6 +14,29 @@ from primer_cli.services.blastdb.preflight import validate_blast_database
 from primer_cli.services.qc.fasta_qc import run_fasta_qc
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_offline_fetch_source(cfg: ProductionConfig) -> Path | None:
+    test_data_dir = cfg.runtime.test_data_dir
+    if test_data_dir is None:
+        return None
+
+    gene = cfg.project.target_gene
+    candidates = [
+        test_data_dir / f"{gene}_raw.fasta",
+        test_data_dir / f"{gene}.raw.fasta",
+        test_data_dir / f"{gene}.fasta",
+        test_data_dir / f"{gene}.fa",
+        test_data_dir / "raw.fasta",
+    ]
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    raise PrimerCliError(
+        "Offline test-data mode is enabled but no fetch FASTA was found for "
+        f"gene '{gene}' in {test_data_dir}. Expected one of: "
+        + ", ".join(path.name for path in candidates)
+    )
 
 
 def _enable_production_logging(cfg: ProductionConfig, args) -> Path:
@@ -69,6 +93,17 @@ def _ensure_blastdb_ready(cfg: ProductionConfig, *, force_rebuild: bool) -> None
 
 def _run_fetch_stage(cfg: ProductionConfig, raw_fasta: Path) -> None:
     from primer_cli.cli.commands.fetch import cmd_fetch
+
+    offline_source = _resolve_offline_fetch_source(cfg)
+    if offline_source is not None:
+        raw_fasta.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(offline_source, raw_fasta)
+        logger.info(
+            "production[%s]: using offline test-data FASTA %s",
+            cfg.project.target_gene,
+            offline_source,
+        )
+        return
 
     cmd_fetch(
         SimpleNamespace(

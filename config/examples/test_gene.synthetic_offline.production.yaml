@@ -1,0 +1,70 @@
+project:
+  name: test_gene_synthetic_offline
+  target_gene: test_gene
+  version: "2026-06-10"
+
+runtime:
+  ncbi_email: "offline@example.org"
+  work_dir: "../../test_data/test_gene_offline/runs/work"
+  output_dir: "../../test_data/test_gene_offline/runs/out"
+  reports_dir: "../../test_data/test_gene_offline/runs/reports"
+  downloads_dir: "../../test_data/test_gene_offline/runs/downloads"
+  test_data_dir: "../../test_data/test_gene_offline/inputs"
+
+tools:
+  datasets_bin: "datasets"
+  mafft_bin: "mafft"
+  blastn_bin: "blastn"
+  makeblastdb_bin: "makeblastdb"
+  blastdbcmd_bin: "blastdbcmd"
+
+specificity_db:
+  out_prefix: "../../test_data/test_gene_offline/runs/blastdb/test_gene_synthetic_panel"
+  title: "test_gene synthetic offline specificity panel"
+  dbtype: "nucl"
+  blastdb_version: 5
+  parse_seqids: true
+  subjects_file: "../../test_data/test_gene_offline/runs/reports/subjects.tsv"
+
+  ncbi_datasets:
+    assembly_level: []
+    target_taxa: []
+    near_target_taxa: []
+    background_taxa: []
+
+  local_fasta:
+    - path: "../../test_data/test_gene_offline/inputs/test_gene_target_contexts.fna"
+      role: "target_context"
+    - path: "../../test_data/test_gene_offline/inputs/test_gene_background_panel.fna"
+      role: "background"
+
+design:
+  max_sequences: 50
+  mafft_args: "--auto --nuc"
+  window_size: 25
+  top_quantile: 0.8
+  top_n: 10
+
+blast_specificity:
+  required: true
+  policy_mode: "production"
+  task: "blastn-short"
+  word_size: 7
+  evalue: 1000
+  max_target_seqs: 500
+  min_hit_identity: 80.0
+  min_hit_len: 12
+  min_query_coverage: 0.80
+  max_total_mismatches: 4
+  max_total_gaps: 0
+  primer_3p_tail_len: 5
+  max_3p_tail_mismatches: 1
+  max_3p_tail_gaps: 0
+  require_predicted_on_target_amplicon: true
+  reject_any_offtarget_amplicon: true
+  reject_good_3prime_offtarget_amplicon: true
+  pair_pool_size: 50
+  pair_pool_expansion_step: 25
+  top_k_unique_primers: 60
+  pair_min_amplicon: 60
+  pair_max_amplicon: 180

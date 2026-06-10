@@ -30,6 +30,7 @@ class RuntimeConfig:
     output_dir: Path
     reports_dir: Path
     downloads_dir: Path
+    test_data_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -270,6 +271,15 @@ def load_production_config(path: str | Path) -> ProductionConfig:
             base_dir,
             runtime_raw.get("downloads_dir"),
             where="runtime.downloads_dir",
+        ),
+        test_data_dir=(
+            _resolve_path(
+                base_dir,
+                runtime_raw.get("test_data_dir"),
+                where="runtime.test_data_dir",
+            )
+            if runtime_raw.get("test_data_dir")
+            else None
         ),
     )
     tools = ToolsConfig(

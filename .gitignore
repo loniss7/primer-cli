@@ -99,5 +99,8 @@ out_*/
 !/data/local_negative_panel.fna
 !/data/target_gene_contexts.fna
 
+# Synthetic offline test fixtures: keep inputs, ignore generated run outputs
+/test_data/test_gene_offline/runs/
+
 # Research and personal working materials
 /lit/

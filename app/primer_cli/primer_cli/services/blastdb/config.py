@@ -80,6 +80,44 @@ class DesignConfig:
 
 
 @dataclass(frozen=True)
+class PrimerDesignConfig:
+    primer_window_min_len: int = 18
+    primer_window_max_len: int = 25
+    primer_window_variability_threshold: float = 0.15
+    primer_window_gap_fraction_threshold: float = 0.20
+    primer_window_max_variable_positions: int = 10
+    primer_window_max_high_gap_positions: int = 2
+    primer_window_tail_len: int = 5
+    primer_window_min_tail3_identity: float = 0.85
+    primer_window_min_tail5_identity: float = 0.80
+    single_filter_min_len: int = 18
+    single_filter_max_len: int = 25
+    single_filter_min_gc_percent: float = 35.0
+    single_filter_max_gc_percent: float = 65.0
+    single_filter_min_tm: float = 54.0
+    single_filter_max_tm: float = 66.0
+    single_filter_max_homopolymer_run: int = 5
+    single_filter_min_gc_clamp_last2: int = 0
+    single_filter_max_gc_clamp_last2: int = 2
+    single_filter_max_hairpin_tm: float = 50.0
+    single_filter_max_homodimer_tm: float = 50.0
+    single_filter_max_self_dimer_3p_tm: float = 48.0
+    single_cov_max_total_mismatches: int = 3
+    single_cov_max_3prime_mismatches: int = 1
+    single_cov_max_weighted_mismatch_score: float = 8.0
+    pair_min_amplicon_len: int = 40
+    pair_max_amplicon_len: int = 220
+    pair_preferred_min_amplicon_len: int = 40
+    pair_preferred_max_amplicon_len: int = 120
+    pair_max_tm_diff: float = 3.5
+    pair_max_heterodimer_tm: float = 50.0
+    pair_cov_max_total_mismatches: int = 3
+    pair_cov_max_3prime_mismatches: int = 1
+    pair_cov_max_gap_positions_per_primer: int = 2
+    pair_cov_max_amplicon_gap_fraction: float = 0.35
+
+
+@dataclass(frozen=True)
 class BlastSpecificityPolicyConfig:
     required: bool
     policy_mode: str
@@ -113,6 +151,7 @@ class ProductionConfig:
     tools: ToolsConfig
     specificity_db: SpecificityDbConfig
     design: DesignConfig
+    primer_design: PrimerDesignConfig
     blast_specificity: BlastSpecificityPolicyConfig
     fetch_query: str | None = None
 
@@ -138,6 +177,7 @@ class GeneJobConfig:
     runtime: RuntimeConfig
     specificity_db: SpecificityDbConfig
     design: DesignConfig
+    primer_design: PrimerDesignConfig
     blast_specificity: BlastSpecificityPolicyConfig
     fetch_query: str | None = None
 
@@ -400,6 +440,46 @@ def _load_design(raw: Any, *, where: str) -> DesignConfig:
     )
 
 
+def _load_primer_design(raw: Any, *, where: str) -> PrimerDesignConfig:
+    mapping = _expect_mapping(raw or {}, where=where)
+    return PrimerDesignConfig(
+        primer_window_min_len=int(mapping.get("primer_window_min_len", 18)),
+        primer_window_max_len=int(mapping.get("primer_window_max_len", 25)),
+        primer_window_variability_threshold=float(mapping.get("primer_window_variability_threshold", 0.15)),
+        primer_window_gap_fraction_threshold=float(mapping.get("primer_window_gap_fraction_threshold", 0.20)),
+        primer_window_max_variable_positions=int(mapping.get("primer_window_max_variable_positions", 10)),
+        primer_window_max_high_gap_positions=int(mapping.get("primer_window_max_high_gap_positions", 2)),
+        primer_window_tail_len=int(mapping.get("primer_window_tail_len", 5)),
+        primer_window_min_tail3_identity=float(mapping.get("primer_window_min_tail3_identity", 0.85)),
+        primer_window_min_tail5_identity=float(mapping.get("primer_window_min_tail5_identity", 0.80)),
+        single_filter_min_len=int(mapping.get("single_filter_min_len", 18)),
+        single_filter_max_len=int(mapping.get("single_filter_max_len", 25)),
+        single_filter_min_gc_percent=float(mapping.get("single_filter_min_gc_percent", 35.0)),
+        single_filter_max_gc_percent=float(mapping.get("single_filter_max_gc_percent", 65.0)),
+        single_filter_min_tm=float(mapping.get("single_filter_min_tm", 54.0)),
+        single_filter_max_tm=float(mapping.get("single_filter_max_tm", 66.0)),
+        single_filter_max_homopolymer_run=int(mapping.get("single_filter_max_homopolymer_run", 5)),
+        single_filter_min_gc_clamp_last2=int(mapping.get("single_filter_min_gc_clamp_last2", 0)),
+        single_filter_max_gc_clamp_last2=int(mapping.get("single_filter_max_gc_clamp_last2", 2)),
+        single_filter_max_hairpin_tm=float(mapping.get("single_filter_max_hairpin_tm", 50.0)),
+        single_filter_max_homodimer_tm=float(mapping.get("single_filter_max_homodimer_tm", 50.0)),
+        single_filter_max_self_dimer_3p_tm=float(mapping.get("single_filter_max_self_dimer_3p_tm", 48.0)),
+        single_cov_max_total_mismatches=int(mapping.get("single_cov_max_total_mismatches", 3)),
+        single_cov_max_3prime_mismatches=int(mapping.get("single_cov_max_3prime_mismatches", 1)),
+        single_cov_max_weighted_mismatch_score=float(mapping.get("single_cov_max_weighted_mismatch_score", 8.0)),
+        pair_min_amplicon_len=int(mapping.get("pair_min_amplicon_len", 40)),
+        pair_max_amplicon_len=int(mapping.get("pair_max_amplicon_len", 220)),
+        pair_preferred_min_amplicon_len=int(mapping.get("pair_preferred_min_amplicon_len", 40)),
+        pair_preferred_max_amplicon_len=int(mapping.get("pair_preferred_max_amplicon_len", 120)),
+        pair_max_tm_diff=float(mapping.get("pair_max_tm_diff", 3.5)),
+        pair_max_heterodimer_tm=float(mapping.get("pair_max_heterodimer_tm", 50.0)),
+        pair_cov_max_total_mismatches=int(mapping.get("pair_cov_max_total_mismatches", 3)),
+        pair_cov_max_3prime_mismatches=int(mapping.get("pair_cov_max_3prime_mismatches", 1)),
+        pair_cov_max_gap_positions_per_primer=int(mapping.get("pair_cov_max_gap_positions_per_primer", 2)),
+        pair_cov_max_amplicon_gap_fraction=float(mapping.get("pair_cov_max_amplicon_gap_fraction", 0.35)),
+    )
+
+
 def _load_blast_specificity(raw: Any, *, where: str) -> BlastSpecificityPolicyConfig:
     mapping = _expect_mapping(raw, where=where)
     return BlastSpecificityPolicyConfig(
@@ -444,6 +524,7 @@ def _validate_production_components(
     *,
     specificity_db: SpecificityDbConfig,
     design: DesignConfig,
+    primer_design: PrimerDesignConfig,
     blast_specificity: BlastSpecificityPolicyConfig,
     where_prefix: str,
 ) -> None:
@@ -454,6 +535,105 @@ def _validate_production_components(
         design.top_quantile,
         where=f"{where_prefix}.design.top_quantile",
         arg_name="top_quantile",
+    )
+    require_positive_int(
+        primer_design.primer_window_min_len,
+        where=f"{where_prefix}.primer_design.primer_window_min_len",
+        arg_name="primer_window_min_len",
+    )
+    require_positive_int(
+        primer_design.primer_window_max_len,
+        where=f"{where_prefix}.primer_design.primer_window_max_len",
+        arg_name="primer_window_max_len",
+    )
+    if primer_design.primer_window_min_len > primer_design.primer_window_max_len:
+        raise validation_error(
+            what="primer_window_min_len must be <= primer_window_max_len",
+            where=f"{where_prefix}.primer_design",
+            fix="Lower primer_window_min_len or raise primer_window_max_len.",
+        )
+    require_fraction_closed01(
+        primer_design.primer_window_variability_threshold,
+        where=f"{where_prefix}.primer_design.primer_window_variability_threshold",
+        arg_name="primer_window_variability_threshold",
+    )
+    require_fraction_closed01(
+        primer_design.primer_window_gap_fraction_threshold,
+        where=f"{where_prefix}.primer_design.primer_window_gap_fraction_threshold",
+        arg_name="primer_window_gap_fraction_threshold",
+    )
+    require_non_negative_int(
+        primer_design.primer_window_max_variable_positions,
+        where=f"{where_prefix}.primer_design.primer_window_max_variable_positions",
+        arg_name="primer_window_max_variable_positions",
+    )
+    require_non_negative_int(
+        primer_design.primer_window_max_high_gap_positions,
+        where=f"{where_prefix}.primer_design.primer_window_max_high_gap_positions",
+        arg_name="primer_window_max_high_gap_positions",
+    )
+    require_fraction_closed01(
+        primer_design.primer_window_min_tail3_identity,
+        where=f"{where_prefix}.primer_design.primer_window_min_tail3_identity",
+        arg_name="primer_window_min_tail3_identity",
+    )
+    require_fraction_closed01(
+        primer_design.primer_window_min_tail5_identity,
+        where=f"{where_prefix}.primer_design.primer_window_min_tail5_identity",
+        arg_name="primer_window_min_tail5_identity",
+    )
+    require_positive_int(
+        primer_design.single_filter_min_len,
+        where=f"{where_prefix}.primer_design.single_filter_min_len",
+        arg_name="single_filter_min_len",
+    )
+    require_positive_int(
+        primer_design.single_filter_max_len,
+        where=f"{where_prefix}.primer_design.single_filter_max_len",
+        arg_name="single_filter_max_len",
+    )
+    if primer_design.single_filter_min_len > primer_design.single_filter_max_len:
+        raise validation_error(
+            what="single_filter_min_len must be <= single_filter_max_len",
+            where=f"{where_prefix}.primer_design",
+            fix="Lower single_filter_min_len or raise single_filter_max_len.",
+        )
+    require_positive_int(
+        primer_design.pair_min_amplicon_len,
+        where=f"{where_prefix}.primer_design.pair_min_amplicon_len",
+        arg_name="pair_min_amplicon_len",
+    )
+    require_positive_int(
+        primer_design.pair_max_amplicon_len,
+        where=f"{where_prefix}.primer_design.pair_max_amplicon_len",
+        arg_name="pair_max_amplicon_len",
+    )
+    if primer_design.pair_min_amplicon_len > primer_design.pair_max_amplicon_len:
+        raise validation_error(
+            what="pair_min_amplicon_len must be <= pair_max_amplicon_len",
+            where=f"{where_prefix}.primer_design",
+            fix="Lower pair_min_amplicon_len or raise pair_max_amplicon_len.",
+        )
+    require_positive_int(
+        primer_design.pair_preferred_min_amplicon_len,
+        where=f"{where_prefix}.primer_design.pair_preferred_min_amplicon_len",
+        arg_name="pair_preferred_min_amplicon_len",
+    )
+    require_positive_int(
+        primer_design.pair_preferred_max_amplicon_len,
+        where=f"{where_prefix}.primer_design.pair_preferred_max_amplicon_len",
+        arg_name="pair_preferred_max_amplicon_len",
+    )
+    if primer_design.pair_preferred_min_amplicon_len > primer_design.pair_preferred_max_amplicon_len:
+        raise validation_error(
+            what="pair_preferred_min_amplicon_len must be <= pair_preferred_max_amplicon_len",
+            where=f"{where_prefix}.primer_design",
+            fix="Lower pair_preferred_min_amplicon_len or raise pair_preferred_max_amplicon_len.",
+        )
+    require_fraction_closed01(
+        primer_design.pair_cov_max_amplicon_gap_fraction,
+        where=f"{where_prefix}.primer_design.pair_cov_max_amplicon_gap_fraction",
+        arg_name="pair_cov_max_amplicon_gap_fraction",
     )
     require_positive_int(
         specificity_db.blastdb_version,
@@ -613,6 +793,7 @@ def _load_single_production_config(config_path: Path, root: dict[str, Any]) -> P
     tools = _load_tools(root.get("tools"))
     specificity_db = _load_specificity_db(base_dir, root.get("specificity_db"), where="specificity_db")
     design = _load_design(root.get("design"), where="design")
+    primer_design = _load_primer_design(root.get("primer_design"), where="primer_design")
     blast_specificity = _load_blast_specificity(root.get("blast_specificity"), where="blast_specificity")
     project = ProjectConfig(
         name=_expect_string(project_raw.get("name"), where="project.name"),
@@ -627,6 +808,7 @@ def _load_single_production_config(config_path: Path, root: dict[str, Any]) -> P
     _validate_production_components(
         specificity_db=specificity_db,
         design=design,
+        primer_design=primer_design,
         blast_specificity=blast_specificity,
         where_prefix="config",
     )
@@ -638,6 +820,7 @@ def _load_single_production_config(config_path: Path, root: dict[str, Any]) -> P
         tools=tools,
         specificity_db=specificity_db,
         design=design,
+        primer_design=primer_design,
         blast_specificity=blast_specificity,
         fetch_query=fetch_query,
     )
@@ -697,6 +880,7 @@ def load_multi_gene_config(path: str | Path) -> MultiGeneProductionConfig:
             default_title=default_title,
         )
         design = _load_design(item.get("design"), where=f"genes[{idx}].design")
+        primer_design = _load_primer_design(item.get("primer_design"), where=f"genes[{idx}].primer_design")
         blast_specificity = _load_blast_specificity(
             item.get("blast_specificity"),
             where=f"genes[{idx}].blast_specificity",
@@ -711,6 +895,7 @@ def load_multi_gene_config(path: str | Path) -> MultiGeneProductionConfig:
         _validate_production_components(
             specificity_db=specificity_db,
             design=design,
+            primer_design=primer_design,
             blast_specificity=blast_specificity,
             where_prefix=f"genes[{idx}]",
         )
@@ -721,6 +906,7 @@ def load_multi_gene_config(path: str | Path) -> MultiGeneProductionConfig:
                 runtime=gene_runtime,
                 specificity_db=specificity_db,
                 design=design,
+                primer_design=primer_design,
                 blast_specificity=blast_specificity,
                 fetch_query=fetch_query,
             )
@@ -750,6 +936,7 @@ def build_gene_production_config(
         tools=batch_cfg.tools,
         specificity_db=gene_job.specificity_db,
         design=gene_job.design,
+        primer_design=gene_job.primer_design,
         blast_specificity=gene_job.blast_specificity,
         fetch_query=gene_job.fetch_query,
     )

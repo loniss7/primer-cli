@@ -81,6 +81,7 @@ blast_specificity:
     assert cfg.specificity_db.subjects_file == (tmp_path / "data" / "subjects.tsv").resolve()
     assert cfg.specificity_db.target_loci_file is None
     assert cfg.design.top_n == 20
+    assert cfg.primer_design.pair_min_amplicon_len == 40
     assert cfg.blast_specificity.policy_mode == "production"
     assert cfg.runtime.datasets_unpack_dir == (tmp_path / "work" / "datasets_unpack").resolve()
 
@@ -289,6 +290,7 @@ genes:
     assert gene_job.runtime.reports_dir == (tmp_path / "runs" / "batch" / "reports" / "gene1").resolve()
     assert gene_job.runtime.downloads_dir == (tmp_path / "cache" / "downloads").resolve()
     assert gene_job.runtime.datasets_unpack_dir == (tmp_path / "cache" / "datasets_unpack").resolve()
+    assert gene_job.primer_design.pair_min_amplicon_len == 40
     assert gene_job.specificity_db.out_prefix == (
         tmp_path / "runs" / "batch" / "blastdb" / "gene1_specificity_panel"
     ).resolve()
@@ -402,6 +404,7 @@ genes:
     assert cfg.runtime.output_dir == (tmp_path / "runs" / "batch" / "out" / "gene2").resolve()
     assert cfg.runtime.downloads_dir == (tmp_path / "cache" / "downloads").resolve()
     assert cfg.runtime.datasets_unpack_dir == (tmp_path / "cache" / "datasets_unpack").resolve()
+    assert cfg.primer_design.pair_min_amplicon_len == 40
     assert cfg.specificity_db.out_prefix == (
         tmp_path / "runs" / "batch" / "blastdb" / "gene2_specificity_panel"
     ).resolve()

@@ -53,6 +53,8 @@ primer-cli run --genes "vanA,vanB,mcr-1" --work-dir ./work --output-dir ./out
 pytest
 ```
 
+`design.max_sequences` limits design-stage input sequences. It does not limit how many genome assemblies are downloaded into the BLAST specificity database. For BLAST DB assembly throttling, use `specificity_db.ncbi_datasets.assembly_limits` in the production YAML.
+
 ## Примечания
 
 - Требуется Python `3.10+`.

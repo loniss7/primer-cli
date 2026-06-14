@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -44,11 +44,37 @@ class ToolsConfig:
 
 
 @dataclass(frozen=True)
+class AssemblyLimitsConfig:
+    target: int | None = None
+    near_target: int | None = None
+    background: int | None = None
+
+    def limit_for_role(self, role: str) -> int | None:
+        if role == "target":
+            return self.target
+        if role == "near_target":
+            return self.near_target
+        if role == "background":
+            return self.background
+        raise validation_error(
+            what=f"unsupported assembly limit role: {role}",
+            where="specificity_db.ncbi_datasets.assembly_limits",
+            fix="Use one of: target, near_target, background.",
+        )
+
+
+@dataclass(frozen=True)
 class NCBIDatasetsConfig:
     assembly_level: tuple[str, ...]
-    target_taxa: tuple[str, ...]
-    near_target_taxa: tuple[str, ...]
-    background_taxa: tuple[str, ...]
+    assembly_source: str | None = None
+    annotated_only: bool = False
+    exclude_atypical: bool = False
+    exclude_multi_isolate: bool = False
+    exclude_mag: bool = False
+    assembly_limits: AssemblyLimitsConfig = field(default_factory=AssemblyLimitsConfig)
+    target_taxa: tuple[str, ...] = field(default_factory=tuple)
+    near_target_taxa: tuple[str, ...] = field(default_factory=tuple)
+    background_taxa: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -222,6 +248,13 @@ def _expect_bool(raw: Any, *, where: str) -> bool:
     )
 
 
+def _expect_optional_string(raw: Any, *, where: str) -> str | None:
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    return value or None
+
+
 def _expect_list_of_strings(raw: Any, *, where: str) -> tuple[str, ...]:
     if raw is None:
         return ()
@@ -233,6 +266,21 @@ def _expect_list_of_strings(raw: Any, *, where: str) -> tuple[str, ...]:
         )
     out = tuple(str(item).strip() for item in raw if str(item).strip())
     return out
+
+
+def _expect_optional_positive_int(raw: Any, *, where: str) -> int | None:
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as e:
+        raise validation_error(
+            what=f"{where} must be a positive integer or null",
+            where=where,
+            fix=f"Set {where} to null or a positive integer.",
+        ) from e
+    require_positive_int(value, where=where, arg_name=where)
+    return value
 
 
 def _resolve_path(base_dir: Path, raw: Any, *, where: str) -> Path:
@@ -295,12 +343,58 @@ def _has_explicit_target_reference(local_fasta: tuple[LocalFastaSourceConfig, ..
     return any(source.role in {"target", "target_context"} for source in local_fasta)
 
 
+def _load_assembly_limits(raw: Any, *, where: str) -> AssemblyLimitsConfig:
+    mapping = _expect_mapping(raw or {}, where=where)
+    return AssemblyLimitsConfig(
+        target=_expect_optional_positive_int(mapping.get("target"), where=f"{where}.target"),
+        near_target=_expect_optional_positive_int(
+            mapping.get("near_target"),
+            where=f"{where}.near_target",
+        ),
+        background=_expect_optional_positive_int(
+            mapping.get("background"),
+            where=f"{where}.background",
+        ),
+    )
+
+
 def _load_ncbi_datasets(raw: Any, *, where: str) -> NCBIDatasetsConfig:
     mapping = _expect_mapping(raw or {}, where=where)
     return NCBIDatasetsConfig(
         assembly_level=_expect_list_of_strings(
             mapping.get("assembly_level"),
             where=f"{where}.assembly_level",
+        ),
+        assembly_source=_expect_optional_string(
+            mapping.get("assembly_source"),
+            where=f"{where}.assembly_source",
+        ),
+        annotated_only=(
+            _expect_bool(mapping.get("annotated_only"), where=f"{where}.annotated_only")
+            if "annotated_only" in mapping
+            else False
+        ),
+        exclude_atypical=(
+            _expect_bool(mapping.get("exclude_atypical"), where=f"{where}.exclude_atypical")
+            if "exclude_atypical" in mapping
+            else False
+        ),
+        exclude_multi_isolate=(
+            _expect_bool(
+                mapping.get("exclude_multi_isolate"),
+                where=f"{where}.exclude_multi_isolate",
+            )
+            if "exclude_multi_isolate" in mapping
+            else False
+        ),
+        exclude_mag=(
+            _expect_bool(mapping.get("exclude_mag"), where=f"{where}.exclude_mag")
+            if "exclude_mag" in mapping
+            else False
+        ),
+        assembly_limits=_load_assembly_limits(
+            mapping.get("assembly_limits"),
+            where=f"{where}.assembly_limits",
         ),
         target_taxa=_expect_list_of_strings(
             mapping.get("target_taxa"),

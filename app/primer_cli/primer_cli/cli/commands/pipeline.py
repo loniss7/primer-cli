@@ -1,7 +1,6 @@
 # src/primer_cli/cli/commands/pipeline.py
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 import logging
 from pathlib import Path
@@ -194,29 +193,10 @@ def _unique_sequences_from_pairs(pairs: list) -> list[str]:
 
 
 def _build_diverse_pair_order(scored_pairs, pair_cov_by_key: dict[tuple[str, str], object]) -> list:
-    remaining = list(scored_pairs)
-    selected = []
-    forward_reuse: Counter[str] = Counter()
-    reverse_reuse: Counter[str] = Counter()
-
-    while remaining:
-        best_index = 0
-        best_adjusted_score: float | None = None
-        for idx, scored in enumerate(remaining):
-            forward_seq = scored.forward_seq.upper()
-            reverse_seq = scored.reverse_seq.upper()
-            reuse_penalty = 1.5 * float(forward_reuse[forward_seq] + reverse_reuse[reverse_seq])
-            adjusted_score = float(scored.final_score) - reuse_penalty
-            if best_adjusted_score is None or adjusted_score > best_adjusted_score:
-                best_adjusted_score = adjusted_score
-                best_index = idx
-
-        best = remaining.pop(best_index)
-        forward_reuse[best.forward_seq.upper()] += 1
-        reverse_reuse[best.reverse_seq.upper()] += 1
-        selected.append(pair_cov_by_key[_pair_key(best.forward_seq, best.reverse_seq)])
-
-    return selected
+    return [
+        pair_cov_by_key[_pair_key(scored.forward_seq, scored.reverse_seq)]
+        for scored in scored_pairs
+    ]
 
 
 def _take_initial_blast_pool(ordered_pairs: list, *, max_pairs: int, max_unique_primers: int) -> tuple[list, int]:

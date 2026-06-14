@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from primer_cli.services.blastdb.config import (
+    AssemblyLimitsConfig,
     BatchProjectConfig,
     BatchRuntimeConfig,
     BlastSpecificityPolicyConfig,
@@ -31,6 +32,7 @@ from primer_cli.services.blastdb.validate import get_blastdb_info
 
 __all__ = [
     "BlastSpecificityPolicyConfig",
+    "AssemblyLimitsConfig",
     "BatchProjectConfig",
     "BatchRuntimeConfig",
     "DesignConfig",

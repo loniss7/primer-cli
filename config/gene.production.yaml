@@ -31,7 +31,15 @@ specificity_db:
   ncbi_datasets:
     assembly_level:
       - complete
-      - chromosome
+    assembly_source: "RefSeq"
+    annotated_only: true
+    exclude_atypical: true
+    exclude_multi_isolate: true
+    exclude_mag: true
+    assembly_limits:
+      target: 30
+      near_target: 15
+      background: 5
     target_taxa:
       - "Enterococcus faecium"
       - "Enterococcus faecalis"

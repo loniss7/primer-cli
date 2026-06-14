@@ -4,9 +4,13 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from primer_cli.core.logging import build_log_file_path, enable_file_logging
 from primer_cli.core.exceptions import PrimerCliError
-from primer_cli.services.blastdb.config import ProductionConfig, load_production_config
+from primer_cli.core.logging import build_log_file_path, enable_file_logging
+from primer_cli.services.blastdb.config import (
+    NCBIDatasetsConfig,
+    ProductionConfig,
+    load_production_config,
+)
 from primer_cli.services.blastdb.fasta_collect import (
     collect_local_fasta_sources,
     collect_ncbi_fasta_sources,
@@ -16,7 +20,10 @@ from primer_cli.services.blastdb.gene_report import write_gene_report
 from primer_cli.services.blastdb.makeblastdb import build_blast_database
 from primer_cli.services.blastdb.manifest import write_manifest
 from primer_cli.services.blastdb.ncbi_datasets import download_ncbi_datasets
-from primer_cli.services.blastdb.preflight import preflight_blastdb_build, validate_blast_database
+from primer_cli.services.blastdb.preflight import (
+    preflight_blastdb_build,
+    validate_blast_database,
+)
 from primer_cli.services.blastdb.validate import get_blastdb_info
 
 logger = logging.getLogger(__name__)
@@ -135,10 +142,18 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
         downloads_dir=cfg.runtime.downloads_dir,
         work_dir=cfg.runtime.work_dir,
         unpack_root_dir=cfg.runtime.datasets_unpack_dir,
-        assembly_levels=cfg.specificity_db.ncbi_datasets.assembly_level,
-        target_taxa=target_taxa,
-        near_target_taxa=cfg.specificity_db.ncbi_datasets.near_target_taxa,
-        background_taxa=cfg.specificity_db.ncbi_datasets.background_taxa,
+        ncbi_config=NCBIDatasetsConfig(
+            assembly_level=cfg.specificity_db.ncbi_datasets.assembly_level,
+            assembly_source=cfg.specificity_db.ncbi_datasets.assembly_source,
+            annotated_only=cfg.specificity_db.ncbi_datasets.annotated_only,
+            exclude_atypical=cfg.specificity_db.ncbi_datasets.exclude_atypical,
+            exclude_multi_isolate=cfg.specificity_db.ncbi_datasets.exclude_multi_isolate,
+            exclude_mag=cfg.specificity_db.ncbi_datasets.exclude_mag,
+            assembly_limits=cfg.specificity_db.ncbi_datasets.assembly_limits,
+            target_taxa=target_taxa,
+            near_target_taxa=cfg.specificity_db.ncbi_datasets.near_target_taxa,
+            background_taxa=cfg.specificity_db.ncbi_datasets.background_taxa,
+        ),
     )
     report["blastdb"]["downloaded_batches"] = [
         {
@@ -146,8 +161,14 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
             "role": batch.role,
             "zip_path": str(batch.zip_path),
             "unpack_dir": str(batch.unpack_dir),
+            "manifest_path": str(batch.manifest_path),
             "status": batch.status,
+            "reuse_status": batch.reuse_status,
             "error": batch.error,
+            "available_count": batch.available_count,
+            "limit": batch.limit,
+            "selected_count": batch.selected_count,
+            "selected_accessions": list(batch.selected_accessions),
         }
         for batch in downloaded
     ]
@@ -156,10 +177,11 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
             "taxon": batch.taxon,
             "role": batch.role,
             "zip_path": str(batch.zip_path),
+            "manifest_path": str(batch.manifest_path),
             "error": batch.error,
         }
         for batch in downloaded
-        if batch.status != "downloaded"
+        if batch.status != "complete"
     ]
     write_gene_report(report_path, report)
 
@@ -215,7 +237,9 @@ def _run_blastdb_build(cfg: ProductionConfig, *, report_path: Path) -> dict[str,
             db_prefix=str(cfg.specificity_db.out_prefix),
             blastdbcmd_bin=cfg.tools.blastdbcmd_bin,
         )
-        report["blastdb"]["status"] = "partial" if report["blastdb"]["skipped_batches"] else "complete"
+        report["blastdb"]["status"] = (
+            "partial" if report["blastdb"]["skipped_batches"] else "complete"
+        )
         report["status"] = report["blastdb"]["status"]
         report["current_stage"] = "complete"
         report["message"] = (
@@ -253,7 +277,11 @@ def cmd_blastdb_build(args) -> int:
     try:
         _run_blastdb_build(cfg, report_path=_gene_report_path(cfg))
     except Exception:
-        logger.exception("BLAST DB build failed: gene=%s config=%s", cfg.project.target_gene, cfg.config_path)
+        logger.exception(
+            "BLAST DB build failed: gene=%s config=%s",
+            cfg.project.target_gene,
+            cfg.config_path,
+        )
         raise
     return 0
 

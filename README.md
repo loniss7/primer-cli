@@ -55,6 +55,35 @@ Multi-gene режим нужен, когда вы хотите прогнать 
 Если у нескольких генов есть общие таксоны, указывайте `runtime.shared_downloads_dir` и `runtime.shared_unpack_dir`, а `specificity_db.out_prefix` оставляйте отдельным для каждого гена.
 Если `blast_specificity.require_predicted_on_target_amplicon: false`, `specificity_db.local_fasta` может быть пустым: тогда пайплайн работает как off-target-only проверка без локального target reference.
 
+## NCBI Datasets assembly limits
+
+`design.max_sequences` and `specificity_db.ncbi_datasets.assembly_limits` control different stages:
+
+- `design.max_sequences` limits how many fetched gene/CDS sequences move into the design pipeline.
+- `specificity_db.ncbi_datasets.assembly_limits` limits how many genome assemblies are selected and downloaded per taxon for BLAST DB construction.
+
+The BLAST DB assembly limit is configured per taxon role and can be disabled with `null`:
+
+```yaml
+specificity_db:
+  ncbi_datasets:
+    assembly_level:
+      - complete
+    assembly_source: "RefSeq"
+    annotated_only: true
+    exclude_atypical: true
+    exclude_multi_isolate: true
+    exclude_mag: true
+    assembly_limits:
+      target: 30
+      near_target: 15
+      background: 5
+```
+
+When a role-specific limit is set, `primer-cli` first runs `datasets summary genome taxon`, normalizes and deduplicates assembly accessions, stores the selected accession list, downloads only those assemblies via `datasets download genome accession`, and writes a per-taxon manifest next to the cached ZIP.
+
+The cache fingerprint includes the taxon, role, assembly filters, and the role-specific limit. Changing any of these values creates a new cache entry instead of reusing an incompatible archive.
+
 ## Как запускать
 
 Запустить все гены из multi-gene конфига:
